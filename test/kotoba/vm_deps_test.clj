@@ -1,0 +1,89 @@
+(ns kotoba.vm-deps-test
+  "Production classpath stays `{io-ipld}`. Filecoin never enters, not as a
+  direct dep and not as a transitive coordinate. inga is a test-only extra.
+
+  The bind (`vm_inga_bind_test`) is allowed to see consensus. `src/` is not.
+  Adding an interpreter to inga's runtime set is a different repo's rule;
+  adding Filecoin here would make 'FVM-shaped' into 'runs Filecoin'."
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
+            [clojure.java.shell :as sh]
+            [clojure.test :refer [deftest is testing]]))
+
+(def production-deps
+  "What may be on the runtime classpath. Content-addressed IPLD, nothing
+  that executes Filecoin, nothing that is a consensus layer."
+  '#{io.github.kotoba-lang/io-ipld})
+
+(def test-extra-deps
+  '#{io.github.cognitect-labs/test-runner
+     io.github.kotoba-lang/inga})
+
+(def forbidden-coord
+  "Lib names and git URLs that would be an actual Filecoin dependency.
+  `fvm` as a substring of a comment is not this — this is coordinates."
+  #"(?i)(^|[./:_-])(filecoin|io-filecoin|cloud-filecoin|ref-fvm|builtin-actors?|lotus|fevm|filcns|fil-proofs?)([./:_-]|$)")
+
+(defn- deps-edn []
+  (edn/read-string (slurp "deps.edn")))
+
+(defn- src-files []
+  (->> (file-seq (io/file "src"))
+       (filter #(.isFile ^java.io.File %))
+       (filter #(re-find #"\.clj[cs]?$" (.getName ^java.io.File %)))))
+
+(defn- coords-in [m]
+  (into []
+        (mapcat (fn [[lib coord]]
+                  (cond-> [(str lib)]
+                    (map? coord)
+                    (concat (keep coord [:git/url :mvn/version :local/root])))))
+        m))
+
+(deftest production-deps-are-only-io-ipld
+  (is (= production-deps (set (keys (:deps (deps-edn)))))
+      "deps.edn's runtime :deps changed. If this is deliberate, change
+       `production-deps` in the same commit and say what a replica now
+       depends on. Filecoin and inga are not candidates."))
+
+(deftest test-extras-are-the-runner-and-inga
+  (is (= test-extra-deps
+         (set (keys (get-in (deps-edn) [:aliases :test :extra-deps]))))
+      "test extra-deps changed. Filecoin does not belong here either."))
+
+(deftest no-coordinate-names-filecoin
+  (testing "direct coords in every alias, including lint replace-deps"
+    (let [edn (deps-edn)
+          blobs (concat (coords-in (:deps edn))
+                        (mapcat (fn [a]
+                                  (concat (coords-in (:extra-deps a))
+                                          (coords-in (:replace-deps a))))
+                                (vals (:aliases edn))))]
+      (doseq [s blobs]
+        (is (not (re-find forbidden-coord (str s)))
+            (str "coordinate looks like Filecoin: " s))))))
+
+(deftest src-does-not-require-inga-or-filecoin
+  (doseq [f (src-files)]
+    (let [text (slurp f)
+          path (.getPath ^java.io.File f)]
+      (is (not (re-find #"\[inga[\./]" text))
+          (str path " requires inga — that makes the VM a consensus-layer VM"))
+      (is (not (re-find #"\[(filecoin|io-filecoin|cloud-filecoin|ref-fvm|lotus)[\./\s]" text))
+          (str path " requires a Filecoin namespace")))))
+
+(defn- dep-tree
+  "Production tree: `clojure -Stree` with no aliases. Empty or failed
+  output is not a pass — silence is not 'no Filecoin'."
+  []
+  (let [{:keys [exit out err]} (sh/sh "clojure" "-Stree")]
+    {:exit exit :out (str out) :err (str err)}))
+
+(deftest production-tree-does-not-mention-filecoin
+  (let [{:keys [exit out err]} (dep-tree)
+        text (str out \newline err)]
+    (is (zero? exit) (str "clojure -Stree failed\n" text))
+    (is (re-find #"io-ipld" out)
+        "tree did not even mention io-ipld — refusing to treat an empty scan as clean")
+    (is (not (re-find forbidden-coord text))
+        (str "production tree pulled a Filecoin coordinate:\n" text))))

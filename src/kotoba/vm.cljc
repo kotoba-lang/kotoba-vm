@@ -16,7 +16,9 @@
   `inga.state/refusal-reasons`.
 
   `:get-fn` / `:put!` are the io-ipld storage port. This repo does not
-  depend on inga or codebase; they inject this, or they don't.
+  depend on inga or codebase; they inject this, or they don't. The
+  inga bind is proven in `test/kotoba/vm_inga_bind_test.clj` (inga is a
+  test extra-dep). Filecoin protocol clients are not a dependency.
 
   ## What this is not
 
