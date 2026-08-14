@@ -85,6 +85,33 @@ Wasm is not the production guest. Compiler Wasm fuel traps; the production path 
 
 Cross-actor mutation needs `apply-message`. `invoke-fn` cannot write another actor's record; that is the consensus seam's invariant, not a VM limitation.
 
+## Bind (inga injects this; neither repo imports the other)
+
+A deployment constructs the machine. `kotoba-vm` does not depend on `inga`.
+`inga` does not depend on `kotoba-vm`. Filecoin protocol clients
+(`io-filecoin`, Lotus, builtin-actors, ref-fvm) are not in either graph.
+
+```clojure
+(require '[inga.state :as state]
+         '[kotoba.vm :as vm])
+
+(def store (vm/memory-store))
+(def invoke (vm/invoke-fn {:get-fn (:get-fn store) :put! (:put! store)}))
+
+(state/machine
+ {:decode-block :ops
+  :put! (:put! store)
+  :get-fn (:get-fn store)
+  :blind-fn pr-str
+  :encrypt-fn identity
+  :height-fn :height
+  :invoke-fn invoke})
+```
+
+`test/kotoba/vm_inga_bind_test.clj` is the proof: an `:actor-call` through
+that machine advances only the callee's state CID. The production `:deps`
+set remains `{io-ipld}`; a gate fails if Filecoin or inga arrive there.
+
 ## Test / lint
 
 ```bash
@@ -92,4 +119,4 @@ clojure -M:test
 clojure -M:lint
 ```
 
-The suite is written to fail if the claimed property is broken: determinism, fuel-as-value, IPLD roundtrip, cross-actor call, nested revert, store isolation, boundary accounting, the inga-shaped seam, CID-mismatch as throw.
+The suite is written to fail if the claimed property is broken: determinism, fuel-as-value, IPLD roundtrip, cross-actor call, nested revert, store isolation, boundary accounting, the inga-shaped seam, CID-mismatch as throw, the inga bind, and a Filecoin-free production classpath.
