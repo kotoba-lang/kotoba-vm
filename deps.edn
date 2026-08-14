@@ -1,0 +1,19 @@
+{:paths ["src"]
+ ;; IPLD actor invocation kernel. The only runtime dependency is the
+ ;; canonical DAG-CBOR layer: blocks, CIDs, verified reads. Consensus
+ ;; (inga) and the codebase evaluator are injected at the seam, never
+ ;; imported — a VM that imports a consensus layer becomes that
+ ;; consensus layer's VM, and a consensus layer that imports a VM
+ ;; cannot run without one.
+ :deps {io.github.kotoba-lang/io-ipld
+        {:git/url "https://github.com/kotoba-lang/io-ipld.git"
+         :git/sha "8bc2dde5ae47129e49a957131c40313b6b02731c"}}
+ :aliases
+ {:test {:extra-paths ["test"]
+         :extra-deps {io.github.cognitect-labs/test-runner
+                      {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+         :main-opts ["-m" "cognitect.test-runner"]
+         :exec-fn cognitect.test-runner.api/test}
+  :lint {:replace-deps {clj-kondo/clj-kondo {:mvn/version "2024.11.14"}}
+         :main-opts ["-m" "clj-kondo.main" "--lint" "src" "test"
+                     "--fail-level" "error"]}}}
