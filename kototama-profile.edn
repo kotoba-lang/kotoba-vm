@@ -1,0 +1,60 @@
+{:schema :kototama.vm/implementation-profile-v1
+ :spec {:schema :kototama.vm/spec-v1
+        :version 1
+        :repository "https://github.com/kotoba-lang/kototama"}
+ :implementation
+ {:name :kotoba-vm
+  :repository "https://github.com/kotoba-lang/kotoba-vm"
+  :kind :ipld-actor-kernel}
+ :profiles
+ {:core/v1
+  {:status :partial
+   :implemented [:deterministic-transition
+                 :fuel-as-value
+                 :ipld-verified-read
+                 :message-local-overlay
+                 :nested-call-revert]
+   :evidence ["test/kotoba/vm_test.cljc"]
+   :omissions [:closed-kotoba-s-expression
+               :bounded-datalog-authority
+               :biscuit-delegation
+               :kototama-receipt-v1]}
+
+  :fvm-actor/v1
+  {:status :shape-only
+   :levels []
+   :implemented [:machine-call-manager-kernel-shape
+                 :actor-address
+                 :numeric-or-named-method
+                 :ipld-blockstore
+                 :actor-state-root
+                 :nested-send
+                 :exit-as-value
+                 :message-overlay]
+   :evidence ["test/kotoba/vm_test.cljc"
+              "test/kotoba/vm_inga_bind_test.clj"]
+   :omissions [:pinned-fvm-network-version
+               :filecoin-actor-abi
+               :filecoin-gas-schedule
+               :fvm-reference-vectors]}
+
+  :evm/v1
+  {:status :not-implemented
+   :levels []
+   :omissions [:evm-message
+               :evm-semantics
+               :evm-bytecode
+               :ethereum-state-root]}
+
+  :fevm/v1
+  {:status :not-implemented
+   :levels []
+   :omissions [:fvm-actor-conformance
+               :evm-conformance
+               :delegated-address-mapping
+               :fevm-system-actor-boundary]}}
+ :non-claims
+ [:filecoin-network-compatibility
+  :evm-compatibility
+  :fevm-compatibility
+  :consensus]}

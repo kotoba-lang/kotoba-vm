@@ -1,14 +1,26 @@
-# kotoba-vm
+# kotoba-vm — a Kototama actor-kernel implementation
 
-**The IPLD actor invocation kernel for a Kotoba app-chain.** Filecoin's FVM in shape (Machine / Call Manager / Kernel / syscalls / invocation-local handles / message-local overlay), not Filecoin's FVM in mechanism.
+**The IPLD actor invocation kernel for a Kotoba app-chain.** It is a partial
+implementation of the
+[`Kototama VM`](https://github.com/kotoba-lang/kototama/blob/main/docs/kototama-virtual-machine.md)
+core and has Filecoin's FVM shape (Machine / Call Manager / Kernel / syscalls /
+invocation-local handles / message-local overlay), not Filecoin compatibility
+by itself.
 
 This repo is the missing execution plane behind `inga.state`'s `:invoke-fn` seam. Consensus does not import it. It is injected, the same way `codebase.actor` is.
 
 > kotoba-vm names itself here because the short name does not tell you which VM.
-> It is **not** `kototama` (Wasm host), **not** `codebase.actor` (a pure function),
+> It is **not the whole** `kototama` specification, **not** `codebase.actor` (a pure function),
 > **not** `io-filecoin` (a protocol client), **not** `kotoba-lang/machine`
 > (hardware descriptors), and **not** the historical etzhayyim Rust Pregel crate
 > of the same name.
+
+The machine-readable [`kototama-profile.edn`](kototama-profile.edn) states the
+current boundary without overclaiming it: partial `core/v1`, FVM
+**shape-only**, and no current `evm/v1` or `fevm/v1` conformance. FVM, EVM or
+FEVM compatibility is earned by pinning the external protocol versions and
+passing the corresponding Kototama differential suites; architectural
+resemblance is not sufficient.
 
 ## Shape (FIP-0030 analogue)
 
@@ -24,7 +36,11 @@ Machine apply-message
 inga.state :invoke-fn adapter (callee state only)
 ```
 
-Takes F1 / F2 / F3 from ADR-2608038000. Rejects Expected Consensus, HAMT, MPT, EVM opcodes, FIL gas markets, PoRep/PoSt. Fuel exhaustion is a **value**, never a throw, and never a Wasm `unreachable` trap.
+Takes F1 / F2 / F3 from ADR-2608038000. This implementation currently rejects
+Expected Consensus, HAMT, MPT, EVM opcodes, FIL gas markets, PoRep/PoSt. Those
+omissions are why its declaration does not claim `fvm-actor/v1`, `evm/v1` or
+`fevm/v1` compatibility. Fuel exhaustion is a **value**, never a throw, and
+never a Wasm `unreachable` trap.
 
 ## What a guest may do
 
