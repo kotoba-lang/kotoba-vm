@@ -21,9 +21,12 @@
      :gas        int             remaining gas
      :steps      int             executed-op counter (halting bound)
      :calldata   byte-seq        attached by the caller
-     :returndata byte-seq        empty until the calls slice fills it
+     :returndata byte-seq        last call's return payload
      :storage    map             slot-hex → word (mock KAMT shape)
      :env        map             ADDRESS/CALLER/BALANCE/block context
+     :static     bool            true inside STATICCALL (writes halt)
+     :nonce      int             account nonce driving the mock EAM
+     :logs       [...]           LOG0..4 entries {:address :topics :data}
      :status     keyword         :running | terminal
      :output     byte-seq        RETURN/REVERT payload}
 
@@ -44,6 +47,7 @@
   (:require [kotoba.vm.evm.u256 :as u256]
             [kotoba.vm.evm.storage :as storage]
             [kotoba.vm.evm.env :as env]
+            [kotoba.vm.evm.calls :as calls]
             [kotoba.vm.keccak :as keccak]))
 
 (def max-stack-depth 1024)
@@ -117,6 +121,15 @@
    0x58 :base        ;; PC
    0x5b :base        ;; JUMPDEST
    0x5f :base        ;; PUSH0 (Paris, EIP-3855)
+   0xa0 :base       ;; LOG0 (+ dynamic mock 8/byte, 375/topic)
+   0xa1 :base       ;; LOG1
+   0xa2 :base       ;; LOG2
+   0xa3 :base       ;; LOG3
+   0xa4 :base       ;; LOG4
+   0xf0 :base       ;; CREATE (mock EAM; flat mock gas)
+   0xf1 :base       ;; CALL (mock flat; 63/64 rule + EIP-2929 omitted)
+   0xf4 :base       ;; DELEGATECALL
+   0xfa :base       ;; STATICCALL
    0xf3 :zero        ;; RETURN
    0xfd :zero        ;; REVERT
    0xfe :zero})      ;; INVALID (all gas consumed at dispatch)
@@ -571,9 +584,12 @@
 (defn- step-sstore
   "SSTORE(slot, value): mock schedule — 20000 when the slot changes
   from zero to nonzero, 2900 when it changes to (or stays) zero; a
-  no-op rewrite is 100 (warm). Storing zero deletes the key."
+  no-op rewrite is 100 (warm). Storing zero deletes the key.
+  In a static context this is an exceptional halt."
   [m]
-  (let [r (take-2 m)]
+  (if (:static m)
+    (invalid m "static context violation (SSTORE)")
+    (let [r (take-2 m)]
     (if (= :underflow r)
       (invalid m "stack underflow")
       (let [[stack slot value] r
@@ -595,7 +611,7 @@
               (assoc m :stack stack'
                      :storage (storage/sstore store slot value)
                      :gas gas'
-                     :pc (inc (:pc m))))))))))
+                     :pc (inc (:pc m)))))))))))
 
 (defn- push-env-word
   "Push an env word read off the machine."
@@ -793,6 +809,208 @@
           (catch #?(:clj Exception :cljs js/Error) e
             (invalid m (or (ex-message e) "return operand out of range"))))))))
 
+;; ---- calls slice: LOG0..4, CALL/STATICCALL/DELEGATECALL, CREATE/CREATE2 ------
+
+(def ^:private call-gas-stipend
+  "Mock CALL adds 2300 forward stipend (Paris shape, flat — the 63/64
+  rule and the EIP-2929 access costs are documented omissions)."
+  2300)
+
+(defn- logs-gas
+  "375 + 375*topics + 8*size (mock, Paris-shaped constants)."
+  [topics size]
+  (+ 375 (* 375 topics) (* 8 size)))
+
+(defn- step-log
+  "LOGn: append {:address :topics :data} to :logs. Stack: topics below,
+  offset above them, size on top. Dynamic gas: 375 base + 375/topic +
+  8/byte (mock schedule). In a static context this is an exceptional
+  halt (EIP-214)."
+  [m n]
+  (if (:static m)
+    (invalid m "static context violation (LOG)")
+    (let [r (pops (:stack m) (+ 2 n))]
+      (if (= :underflow r)
+        (invalid m "stack underflow")
+        (let [[ps rest] r
+              m0 (assoc m :stack rest)
+              ps (vec ps)
+              size-idx (nth ps (dec (count ps)))
+              offset-idx (nth ps (- (count ps) 2))
+              topics (subvec ps 0 (- (count ps) 2))]
+          (try
+            (let [offset (operand->int offset-idx)
+                  size (operand->int size-idx)
+                  [mem bs] (mem-load (:memory m0) offset size)
+                  gas' (charge (:gas m0) (logs-gas n size))]
+              (cond
+                (= :out-of-gas gas') (invalid m0 "out of gas (log)")
+                :else (assoc m0 :gas gas'
+                             :memory mem
+                             :logs (conj (vec (:logs m0))
+                                         {:address (get-in m0 [:env :address])
+                                          :topics (vec topics)
+                                          :data (vec bs)}))))
+            (catch #?(:clj Exception :cljs js/Error) e
+              (invalid m0 (or (ex-message e) "log operand out of range")))))))))
+
+(declare make-machine run)
+
+(defn- child-env
+  "Env for a child frame. CALL: caller = this frame's ADDRESS, value =
+  the transferred word. STATICCALL: no value, caller = parent's caller
+  (irrelevant — the child never sees it). DELEGATECALL: the parent's
+  full account context passes through (address, caller, value)."
+  [m kind callee value]
+  (let [e (:env m)]
+    (case kind
+      :call (assoc e :address callee :caller (get e :address) :callvalue value)
+      :staticcall (assoc e :address callee :callvalue (u256/from-long 0))
+      :delegatecall e)))
+
+(defn- run-child
+  "Build and run a child frame. Returns the terminal child machine, or
+  nil when the callee address has no code (mock ledger: addresses are
+  code carriers only — code comes from the caller-supplied :code-for
+  map on the env)."
+  [m kind callee value input gas]
+  (let [e (:env m)
+        code-for (get e :code-for)
+        code (get code-for (u256/to-hex-string callee))]
+    (when (some? code)
+      (let [child-env' (child-env m kind callee value)
+            storage (get m :storage storage/empty-store)
+            child (make-machine code gas input storage child-env'
+                                {:static (= kind :staticcall)
+                                 :logs []
+                                 :nonce (:nonce m)})]
+        (run child)))))
+
+(defn- copy-returndata
+  "Copy min(ret-size, payload) bytes of the child output into parent
+  memory at ret-offset; set :returndata to the full payload."
+  [m out ret-offset ret-size]
+  (let [payload (vec out)
+        n (min ret-size (count payload))]
+    (assoc m
+           :memory (mem-store (:memory m) ret-offset (take n payload))
+           :returndata payload)))
+
+(defn- step-call
+  "CALL (0xf1) / STATICCALL (0xfa) / DELEGATECALL (0xf4).
+  Stack (bottom→top) — CALL: ret-size, ret-off, in-size, in-off, value,
+  addr, gas. STATICCALL/DELEGATECALL: same without value. The popped
+  operand sequence is oldest-first, so gas is LAST and ret-size FIRST.
+  Mock gas: flat 2300 stipend deducted up front; unused child gas is
+  returned. Success pushes 1, any child failure 0. A call into an
+  address with no code succeeds with empty returndata (the EVM shape).
+  In a static context only STATICCALL is permitted."
+  [m kind]
+  (if (and (:static m) (not= kind :staticcall))
+    (invalid m "static context violation (call)")
+    (let [n (if (= :call kind) 7 6)
+          r (pops (:stack m) n)]
+      (if (= :underflow r)
+        (invalid m "stack underflow")
+        (let [[ps rest] r
+              m0 (assoc m :stack rest)
+              ps (vec ps)
+              gas-idx (nth ps (dec n))
+              callee (nth ps (dec (dec n)))
+              value (if (= :call kind) (nth ps (- n 3)) (u256/from-long 0))
+              in-off-i (operand->int (nth ps 3))
+              in-size-i (operand->int (nth ps 2))
+              ret-off-i (operand->int (nth ps 1))
+              ret-size-i (operand->int (nth ps 0))]
+          (try
+            (let [gas-asked (min (- (:gas m0) call-gas-stipend)
+                                 (word->long gas-idx))
+                  [mem' input] (mem-load (:memory m0) in-off-i in-size-i)
+                  child (run-child m0 kind callee value input gas-asked)]
+              (cond
+                (neg? gas-asked)
+                (invalid m0 "out of gas (call)")
+
+                ;; no code at the callee = a successful empty call
+                (nil? child)
+                (assoc m0 :memory mem' :returndata []
+                       :stack (push-word rest one))
+
+                :else
+                (let [m1 (copy-returndata
+                          (assoc m0 :memory mem') (:output child)
+                          ret-off-i ret-size-i)
+                      m2 (assoc m1 :gas (+ (:gas m1) (:gas child)))]
+                  ;; :halted (RETURN) and :stopped (STOP / end of code)
+                  ;; are both successful child terminations; :reverted and
+                  ;; :invalid are failures with no state retention.
+                  (if (#{:halted :stopped} (:status child))
+                    (assoc m2
+                           :storage (:storage child)
+                           :logs (vec (concat (:logs m2) (:logs child)))
+                           :nonce (max (:nonce m0) (:nonce child))
+                           :stack (push-word rest one))
+                    (assoc m2 :stack (push-word rest zero-word))))))
+            (catch #?(:clj Exception :cljs js/Error) e
+              (invalid m0 (or (ex-message e) "call operand out of range")))))))))
+
+(defn- step-create
+  "CREATE (0xf0) / CREATE2 (0xf5): run the init code as a child frame;
+  its RETURN payload is the deployed code. Push the mock EAM address,
+  or 0 on any child failure. In a static context this is an
+  exceptional halt. The child's :logs are dropped (create-tx shape);
+  its storage starts empty in this mock."
+  [m create2?]
+  (if (:static m)
+    (invalid m "static context violation (CREATE)")
+    (let [r (pops (:stack m) (if create2? 4 3))]
+      (if (= :underflow r)
+        (invalid m "stack underflow")
+        (let [[ps rest] r
+              m0 (assoc m :stack rest)
+              ps (vec ps)
+              value (nth ps 0)
+              in-off (nth ps 1)
+              in-size (nth ps 2)
+              salt (if create2? (nth ps 3) (:nonce m0))]
+          (try
+            (let [in-off-i (operand->int in-off)
+                  in-size-i (operand->int in-size)
+                  [mem' init-code] (mem-load (:memory m0) in-off-i in-size-i)
+                  e (:env m0)
+                  self (get e :address)
+                  addr (calls/create-address-word self salt create2?)
+                  child-env (assoc e :address addr
+                                   :caller self
+                                   :callvalue value)
+                  child (make-machine init-code (:gas m0) []
+                                      storage/empty-store child-env
+                                      {:static false :logs [] :nonce 0})]
+              (if (nil? child)
+                (invalid m0 "create failed")
+                (let [child' (run child)]
+                  (if (and (= :halted (:status child')) (seq (:output child')))
+                    (let [deployed (vec (:output child'))
+                          ;; deploy: a fresh machine over the returned
+                          ;; code that just STOPs proves it parses; the
+                          ;; mock EAM records it as an address → code
+                          ;; pair in this frame's env (shape only)
+                          new-env (assoc-in
+                                   (assoc m0 :env e)
+                                   [:env :code-for
+                                    (u256/to-hex-string addr)]
+                                   deployed)]
+                      (assoc new-env
+                             :memory mem'
+                             :gas (+ (:gas m0) (:gas child'))
+                             :nonce (inc (:nonce m0))
+                             :stack (push-word rest addr)))
+                    (assoc (assoc m0 :memory mem'
+                                  :gas (+ (:gas m0) (:gas child')))
+                           :stack (push-word rest zero-word))))))
+            (catch #?(:clj Exception :cljs js/Error) e
+              (invalid m0 (or (ex-message e) "create operand out of range")))))))))
+
 (defn- step-mstore
   [m byte-size]
   (let [r (take-2 m)]
@@ -913,6 +1131,17 @@
              (assoc m :stack stack')))
     0x5b (assoc m :pc (inc (:pc m)))
     0x5f (step-push m 0x5f)
+    0xa0 (step-log m 0)
+    0xa1 (step-log m 1)
+    0xa2 (step-log m 2)
+    0xa3 (step-log m 3)
+    0xa4 (step-log m 4)
+    0xf0 (step-create m false)
+    0xf1 (step-call m :call)
+    0xf2 (invalid m "invalid opcode 0xf2")   ;; CALLCODE: rejected per scope
+    0xf4 (step-call m :delegatecall)
+    0xfa (step-call m :staticcall)
+    0xf5 (step-create m true)
     0xf3 (step-return-revert m :halted)
     0xfd (step-return-revert m :reverted)
     0xfe (invalid m "INVALID opcode")
@@ -961,18 +1190,25 @@
   ([code gas calldata]
    (make-machine code gas calldata {} nil))
   ([code gas calldata storage env]
-   {:code (vec code)
-    :stack []
-    :memory []
-    :pc 0
-    :gas (int gas)
-    :steps 0
-    :calldata (vec calldata)
-    :returndata []
-    :storage (or storage storage/empty-store)
-    :env (or env env/default-env)
-    :status :running
-    :output []}))
+   (make-machine code gas calldata storage env nil))
+  ([code gas calldata storage env opts]
+   (let [{:keys [static logs nonce]
+          :or {static false logs [] nonce 0}} opts]
+     {:code (vec code)
+      :stack []
+      :memory []
+      :pc 0
+      :gas (int gas)
+      :steps 0
+      :calldata (vec calldata)
+      :returndata []
+      :storage (or storage storage/empty-store)
+      :env (or env env/default-env)
+      :static static
+      :nonce nonce
+      :logs (vec logs)
+      :status :running
+      :output []})))
 
 (defn run
   "Step until a terminal status (bounded by max-steps)."
