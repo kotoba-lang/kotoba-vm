@@ -14,7 +14,12 @@
          :git/sha "8bc2dde5ae47129e49a957131c40313b6b02731c"}
         io.github.kotoba-lang/nio
         {:git/url "https://github.com/kotoba-lang/nio.git"
-         :git/sha "0bbbc0501c97a851898bae0e8c634ac135f0cb83"}}
+         :git/sha "0bbbc0501c97a851898bae0e8c634ac135f0cb83"}
+        ;; f410 address checksums (FIP-0055) need a variable-length BLAKE2b.
+        ;; Leaf library, both runtimes, no transitive deps.
+        io.github.kotoba-lang/org-ietf-blake2
+        {:git/url "https://github.com/kotoba-lang/org-ietf-blake2.git"
+         :git/sha "5785beab88167f8588c31c3f756573fecefa6076"}}
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps {io.github.cognitect-labs/test-runner
