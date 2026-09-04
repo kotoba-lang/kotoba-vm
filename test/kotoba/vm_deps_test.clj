@@ -12,11 +12,14 @@
             [clojure.test :refer [deftest is testing]]))
 
 (def production-deps
-  "What may be on the runtime classpath. Content-addressed IPLD plus the
-  portable byte-buffer seam (nio) keccak's absorb/squeeze ride — nothing
-  that executes Filecoin, nothing that is a consensus layer."
+  "What may be on the runtime classpath. Content-addressed IPLD, the
+  portable byte-buffer seam (nio) keccak's absorb/squeeze ride, and the
+  portable BLAKE2b leaf (org-ietf-blake2) the f410 address checksum
+  rides — nothing that executes Filecoin, nothing that is a consensus
+  layer."
   '#{io.github.kotoba-lang/io-ipld
-     io.github.kotoba-lang/nio})
+     io.github.kotoba-lang/nio
+     io.github.kotoba-lang/org-ietf-blake2})
 
 (def test-extra-deps
   '#{io.github.cognitect-labs/test-runner
