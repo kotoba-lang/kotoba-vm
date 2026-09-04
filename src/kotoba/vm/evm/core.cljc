@@ -22,6 +22,8 @@
      :steps      int             executed-op counter (halting bound)
      :calldata   byte-seq        attached by the caller
      :returndata byte-seq        empty until the calls slice fills it
+     :storage    map             slot-hex → word (mock KAMT shape)
+     :env        map             ADDRESS/CALLER/BALANCE/block context
      :status     keyword         :running | terminal
      :output     byte-seq        RETURN/REVERT payload}
 
@@ -40,6 +42,8 @@
   dynamic per-byte cost is a documented omission (flat 10 gas) — the
   profile stays :partial."
   (:require [kotoba.vm.evm.u256 :as u256]
+            [kotoba.vm.evm.storage :as storage]
+            [kotoba.vm.evm.env :as env]
             [kotoba.vm.keccak :as keccak]))
 
 (def max-stack-depth 1024)
@@ -87,12 +91,27 @@
    0x1c :verylow     ;; SHR
    0x1d :verylow     ;; SAR
    0x20 :keccak-base ;; KECCAK256 (+ dynamic 6/word)
+   0x30 :base       ;; ADDRESS
+   0x31 :base       ;; BALANCE (mock ledger; cold-access cost is an omission)
+   0x32 :base       ;; ORIGIN
+   0x33 :base       ;; CALLER
+   0x34 :base       ;; CALLVALUE
+   0x3a :base       ;; GASPRICE
+   0x3d :base       ;; RETURNDATASIZE (0 until the calls slice)
+   0x40 :base       ;; BLOCKHASH (mock map)
+   0x41 :base       ;; COINBASE
+   0x42 :base       ;; TIMESTAMP
+   0x43 :base       ;; NUMBER
+   0x44 :base       ;; PREVRANDAO (difficulty field, post-merge)
+   0x45 :base       ;; GASLIMIT
+   0x46 :base       ;; CHAINID (314 = Filecoin mainnet, FIP-0054 shape)
+   0x48 :base       ;; BASEFEE
    0x50 :base        ;; POP
    0x51 :verylow    ;; MLOAD
    0x52 :verylow    ;; MSTORE
    0x53 :verylow    ;; MSTORE8
-   0x54 :high       ;; SLOAD — env slice wires the store; here it halts
-   0x55 :high       ;; SSTORE — same
+   0x54 :high       ;; SLOAD — cold 2100 per the Paris access-list-free schedule
+   0x55 :high       ;; SSTORE — mock schedule: flat 20000 (set) / 2900 (clear)
    0x56 :mid         ;; JUMP
    0x57 :high        ;; JUMPI
    0x58 :base        ;; PC
@@ -535,7 +554,93 @@
   (let [[ps rest] (pops (:stack m) 2)]
     (if (= :underflow ps) :underflow [rest (nth ps 1) (nth ps 0)])))
 
-;; ---- dispatch ---------------------------------------------------------------
+;; ---- storage & environment (evm-storage+env slice) ---------------------------
+
+(defn- step-sload
+  [m]
+  (let [r (take-1 m)]
+    (if (= :underflow r)
+      (invalid m "stack underflow")
+      (let [[stack slot] r
+            w (storage/sload (get m :storage storage/empty-store) slot)
+            stack' (push-word stack w)]
+        (if (= :overflow stack')
+          (invalid m "stack overflow")
+          (assoc m :stack stack' :pc (inc (:pc m))))))))
+
+(defn- step-sstore
+  "SSTORE(slot, value): mock schedule — 20000 when the slot changes
+  from zero to nonzero, 2900 when it changes to (or stays) zero; a
+  no-op rewrite is 100 (warm). Storing zero deletes the key."
+  [m]
+  (let [r (take-2 m)]
+    (if (= :underflow r)
+      (invalid m "stack underflow")
+      (let [[stack slot value] r
+            store (get m :storage storage/empty-store)
+            current (storage/sload store slot)
+            was-zero? (u256/eq current zero-word)
+            now-zero? (u256/eq value zero-word)
+            unchanged? (u256/eq current value)
+            cost (cond unchanged? 100
+                       now-zero? 2900
+                       was-zero? 20000
+                       :else 2900)
+            gas' (charge (:gas m) cost)]
+        (if (= :out-of-gas gas')
+          (invalid m "out of gas (sstore)")
+          (let [stack' (push-word stack value)]
+            (if (= :overflow stack')
+              (invalid m "stack overflow")
+              (assoc m :stack stack'
+                     :storage (storage/sstore store slot value)
+                     :gas gas'
+                     :pc (inc (:pc m))))))))))
+
+(defn- push-env-word
+  "Push an env word read off the machine."
+  [m w]
+  (let [stack' (push-word (:stack m) w)]
+    (if (= :overflow stack')
+      (invalid m "stack overflow")
+      (assoc m :stack stack' :pc (inc (:pc m))))))
+
+(defn- step-balance
+  [m]
+  (let [r (take-1 m)]
+    (if (= :underflow r)
+      (invalid m "stack underflow")
+      (let [[stack addr] r
+            e (get m :env env/default-env)
+            stack' (push-word stack (env/balance-of e addr))]
+        (if (= :overflow stack')
+          (invalid m "stack overflow")
+          (assoc m :stack stack' :pc (inc (:pc m))))))))
+
+(defn- step-blockhash
+  [m]
+  (let [r (take-1 m)]
+    (if (= :underflow r)
+      (invalid m "stack underflow")
+      (let [[stack number] r
+            e (get m :env env/default-env)
+            stack' (push-word stack (env/blockhash-of e number))]
+        (if (= :overflow stack')
+          (invalid m "stack overflow")
+          (assoc m :stack stack' :pc (inc (:pc m))))))))
+
+(defn- step-env-const
+  "Push a plain env/block word (no operands consumed)."
+  [m w]
+  (push-env-word m w))
+
+(defn- step-returndatasize
+  "0 until the calls slice populates returndata."
+  [m]
+  (push-env-word m zero-word))
+
+(defn- block-word
+  [e field] (get-in e [:block field]))
 
 (defn- binop
   "Pop 2, apply f, push 1."
@@ -773,8 +878,23 @@
     0x51 (step-mload m)
     0x52 (step-mstore m 32)
     0x53 (step-mstore m 1)
-    0x54 (invalid m "SLOAD: storage not wired until the evm-storage+env slice")
-    0x55 (invalid m "SSTORE: storage not wired until the evm-storage+env slice")
+    0x30 (let [e (get m :env env/default-env)] (step-env-const m (:address e)))
+    0x31 (step-balance m)
+    0x32 (let [e (get m :env env/default-env)] (step-env-const m (:origin e)))
+    0x33 (let [e (get m :env env/default-env)] (step-env-const m (:caller e)))
+    0x34 (let [e (get m :env env/default-env)] (step-env-const m (:callvalue e)))
+    0x3a (let [e (get m :env env/default-env)] (step-env-const m (:gasprice e)))
+    0x3d (step-returndatasize m)
+    0x40 (step-blockhash m)
+    0x41 (let [e (get m :env env/default-env)] (step-env-const m (block-word e :coinbase)))
+    0x42 (let [e (get m :env env/default-env)] (step-env-const m (block-word e :timestamp)))
+    0x43 (let [e (get m :env env/default-env)] (step-env-const m (block-word e :number)))
+    0x44 (let [e (get m :env env/default-env)] (step-env-const m (block-word e :difficulty)))
+    0x45 (let [e (get m :env env/default-env)] (step-env-const m (block-word e :gaslimit)))
+    0x46 (let [e (get m :env env/default-env)] (step-env-const m (block-word e :chainid)))
+    0x48 (let [e (get m :env env/default-env)] (step-env-const m (block-word e :basefee)))
+    0x54 (step-sload m)
+    0x55 (step-sstore m)
     0x56 (let [r (take-1 m)]
            (if (= :underflow r)
              (invalid m "stack underflow")
@@ -835,10 +955,12 @@
                   m')))))))))
 
 (defn make-machine
-  "Fresh machine over code with optional gas and calldata."
+  "Fresh machine over code with optional gas, calldata, storage, and env."
   ([code] (make-machine code 1000000 []))
   ([code gas] (make-machine code gas []))
   ([code gas calldata]
+   (make-machine code gas calldata {} nil))
+  ([code gas calldata storage env]
    {:code (vec code)
     :stack []
     :memory []
@@ -847,6 +969,8 @@
     :steps 0
     :calldata (vec calldata)
     :returndata []
+    :storage (or storage storage/empty-store)
+    :env (or env env/default-env)
     :status :running
     :output []}))
 

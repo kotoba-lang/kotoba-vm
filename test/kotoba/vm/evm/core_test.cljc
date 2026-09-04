@@ -281,8 +281,8 @@
     (is (= :invalid (run-status (code "600101")))))
   (testing "truncated PUSH32 immediate is :invalid"
     (is (= :invalid (run-status (code "7f01")))))
-  (testing "SLOAD halts :invalid until the storage slice wires it"
-    (is (= :invalid (run-status (code "600054"))))))
+  (testing "SLOAD of an untouched slot reads 0 (was :invalid before this slice)"
+    (is (= :stopped (run-status (code "600054"))))))
 
 (deftest stack-depth-limit
   (testing "pushing past 1024 items halts :invalid"
