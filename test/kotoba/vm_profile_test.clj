@@ -20,10 +20,14 @@
   (is (= :shape-only
          (get-in profile [:profiles :fvm-actor/v1 :status])))
   (is (empty? (get-in profile [:profiles :fvm-actor/v1 :levels])))
-  (is (= :not-implemented
+  (is (= :partial
          (get-in profile [:profiles :evm/v1 :status])))
-  (is (= :not-implemented
+  (is (seq (get-in profile [:profiles :evm/v1 :implemented])))
+  (is (seq (get-in profile [:profiles :evm/v1 :evidence])))
+  (is (= :partial
          (get-in profile [:profiles :fevm/v1 :status])))
+  (is (seq (get-in profile [:profiles :fevm/v1 :implemented])))
+  (is (seq (get-in profile [:profiles :fevm/v1 :evidence])))
   (is (= #{:filecoin-network-compatibility
            :evm-compatibility
            :fevm-compatibility

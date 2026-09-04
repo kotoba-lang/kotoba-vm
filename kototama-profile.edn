@@ -39,20 +39,45 @@
                :fvm-reference-vectors]}
 
   :evm/v1
-  {:status :not-implemented
+  {:status :partial
    :levels []
+   :implemented [:evm-u256-arithmetic
+                 :evm-stack-machine
+                 :evm-paris-opcode-dispatch
+                 :evm-storage-sload-sstore-shape
+                 :evm-env-block-opcodes
+                 :evm-call-staticcall-delegatecall-shape
+                 :evm-create-create2-mock-eam
+                 :evm-logs]
+   :evidence ["test/kotoba/vm/evm/u256_test.cljc"
+              "test/kotoba/vm/evm/core_test.cljc"
+              "test/kotoba/vm/evm/storage_test.cljc"
+              "test/kotoba/vm/evm/env_test.cljc"
+              "test/kotoba/vm/evm/calls_test.cljc"]
    :omissions [:evm-message
-               :evm-semantics
-               :evm-bytecode
-               :ethereum-state-root]}
+               :ethereum-state-root
+               :precompiled-contracts
+               :selfdestruct
+               :real-eam-create
+               :real-ipld-kamt-store
+               :filecoin-gas-schedule
+               :evm-reference-vectors]}
 
   :fevm/v1
-  {:status :not-implemented
+  {:status :partial
    :levels []
+   :implemented [:fvm-evm-exit-code-mapping
+                 :f410-address-shape
+                 :masked-id-address
+                 :invoke-contract-method-num
+                 :handle-filecoin-method-abi-shape]
+   :evidence ["test/kotoba/vm/fvm/mapping_test.cljc"]
    :omissions [:fvm-actor-conformance
                :evm-conformance
                :delegated-address-mapping
-               :fevm-system-actor-boundary]}}
+               :fevm-system-actor-boundary
+               :filecoin-network-compatibility
+               :real-fvm-exit]}}
  :non-claims
  [:filecoin-network-compatibility
   :evm-compatibility
