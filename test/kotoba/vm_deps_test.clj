@@ -1,6 +1,7 @@
 (ns kotoba.vm-deps-test
-  "Production classpath stays `{io-ipld}`. Filecoin never enters, not as a
-  direct dep and not as a transitive coordinate. inga is a test-only extra.
+  "Production classpath stays `{io-ipld, nio}`. Filecoin never enters, not
+  as a direct dep and not as a transitive coordinate. inga is a test-only
+  extra.
 
   The bind (`vm_inga_bind_test`) is allowed to see consensus. `src/` is not.
   Adding an interpreter to inga's runtime set is a different repo's rule;
@@ -11,9 +12,11 @@
             [clojure.test :refer [deftest is testing]]))
 
 (def production-deps
-  "What may be on the runtime classpath. Content-addressed IPLD, nothing
+  "What may be on the runtime classpath. Content-addressed IPLD plus the
+  portable byte-buffer seam (nio) keccak's absorb/squeeze ride — nothing
   that executes Filecoin, nothing that is a consensus layer."
-  '#{io.github.kotoba-lang/io-ipld})
+  '#{io.github.kotoba-lang/io-ipld
+     io.github.kotoba-lang/nio})
 
 (def test-extra-deps
   '#{io.github.cognitect-labs/test-runner

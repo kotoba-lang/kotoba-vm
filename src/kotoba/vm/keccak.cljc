@@ -4,9 +4,12 @@
   cannot substitute. :clj rides the JVM's 64-bit longs for the permutation;
   :cljs rides JS BigInt with a 64-bit mask.
 
-  Dependency-free on purpose: it must run inside the VM (stdlib only),
-  match the reference vectors (empty → c5d246…a470, \"abc\" → 4e0365…6c45),
-  and agree on both runtimes.
+  The byte seam (rate blocks in, digest out) belongs to
+  kotoba.nio.bytebuffer — the one place little-endian u64 conversion is
+  done identically on both runtimes. Everything else here is stdlib.
+
+  Match the reference vectors (empty → c5d246…a470, \"abc\" → 4e0365…6c45)
+  on both runtimes.
 
   Lane layout: a flat 25-vector where lane i is (x, y) = (quot i 5, mod i 5)
   — x slowest. Absorb places input word i at lane (mod i 5, quot i 5) =
@@ -14,7 +17,8 @@
   The round function is the verified form: theta with
   d[x] = c[x-1] ^ ROT(c[x+1], 1), rho+pi
   b[y][(2x+3y) mod 5] = ROT(st[x][y], R[x][y]), chi
-  st[x][y] = b[x][y] ^ (~b[x+1][y] & b[x+2][y]), iota st[0][0] ^= RC[r].")
+  st[x][y] = b[x][y] ^ (~b[x+1][y] & b[x+2][y]), iota st[0][0] ^= RC[r]."
+  (:require [kotoba.nio.bytebuffer :as nio]))
 
 (def ^:private r-rot
   "Rotation offsets R[x][y], stored column-major (index y*5+x) to match the
@@ -115,15 +119,13 @@
 
 (defn- block-words
   "Split a 136-byte rate block into 17 little-endian u64 words (the lanes
-  the rate covers; capacity lanes stay zero)."
+  the rate covers; capacity lanes stay zero). kotoba.nio.bytebuffer owns
+  the byte seam — and the little-endian-by-default rule the first version
+  of this file got wrong by wrapping java.nio.ByteBuffer directly (its
+  default order is big-endian)."
   [block]
-  #?(:clj
-     (let [buf (-> (java.nio.ByteBuffer/wrap (byte-array block))
-                   (.order java.nio.ByteOrder/LITTLE_ENDIAN))]
-       (vec (for [_ (range 17)] (.getLong buf))))
-     :cljs
-     (let [dv (js/DataView. (.-buffer (js/Uint8Array. (clj->js (seq block)))))]
-       (vec (for [i (range 17)] (dv.getBigUint64 (* 8 i) true))))))
+  (let [buf (nio/wrap block)]
+    (vec (for [_ (range 17)] (nio/get-u64 buf)))))
 
 (defn- words->state
   "Place absorb words into the sheet: python st[i%5][i//5] with the flat
@@ -139,17 +141,10 @@
   st[i%5][i//5] = flat index i, little-endian."
   [state]
   (let [words (vec (for [i (range 4)]
-                     (state i)))]
-    #?(:clj
-       (let [buf (-> (java.nio.ByteBuffer/allocate 32)
-                     (.order java.nio.ByteOrder/LITTLE_ENDIAN))]
-         (doseq [w words] (.putLong buf w))
-         (.array buf))
-       :cljs
-       (let [out (js/Uint8Array. 32)
-             dv (js/DataView. (.-buffer out))]
-         (doseq [i (range 4)] (dv.setBigUint64 (* 8 i) (js/BigInt (words i)) true))
-         out))))
+                     (state i)))
+        buf (nio/allocate 32)]
+    (doseq [w words] (nio/put-u64 buf w))
+    (vec (nio/buf->bytes buf))))
 
 (defn keccak256
   "Keccak-256 of byte-seq input → 32-byte array-like (byte-array / Uint8Array).

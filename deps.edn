@@ -11,7 +11,10 @@
  ;; not even as test extras. Shape is FIP-0030; bytes are not Filecoin's.
  :deps {io.github.kotoba-lang/io-ipld
         {:git/url "https://github.com/kotoba-lang/io-ipld.git"
-         :git/sha "8bc2dde5ae47129e49a957131c40313b6b02731c"}}
+         :git/sha "8bc2dde5ae47129e49a957131c40313b6b02731c"}
+        io.github.kotoba-lang/nio
+        {:git/url "https://github.com/kotoba-lang/nio.git"
+         :git/sha "0bbbc0501c97a851898bae0e8c634ac135f0cb83"}}
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps {io.github.cognitect-labs/test-runner
