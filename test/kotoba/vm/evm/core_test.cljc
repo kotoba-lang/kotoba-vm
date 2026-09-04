@@ -1,0 +1,308 @@
+(ns kotoba.vm.evm.core-test
+  "Vectors for the evm-core slice. Code is built as byte vectors from
+  hex strings; expected words use the u256 surface so the same file
+  passes on :clj and :cljs."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.vm.evm.core :as core]
+            [kotoba.vm.evm.u256 :as u256]))
+
+(defn- hex-bytes
+  "Hex string(s) → byte vector (one element per byte)."
+  [& ss]
+  (mapv (fn [pair]
+          #?(:clj (Integer/parseInt pair 16)
+             :cljs (js/parseInt pair 16)))
+        (re-seq #".." (apply str ss))))
+
+(defn- code
+  "Concatenated opcode bytes: numbers pass through, strings parse as hex."
+  [& parts]
+  (vec (mapcat (fn [p]
+                 (if (string? p)
+                   (hex-bytes p)
+                   [p]))
+               parts)))
+
+(defn- push-word
+  "PUSHn (n = 1..32) for a u256 value: minimal immediate width."
+  [x]
+  (let [hx (u256/to-hex-string x)
+        trimmed (apply str (drop-while #(= \0 %) hx))
+        trimmed (if (empty? trimmed) "0" trimmed)
+        n' (max 1 (quot (+ (count trimmed) 1) 2))]
+    (into [(+ 0x5f n')]
+          (hex-bytes (subs hx (- 64 (* 2 n')))))))
+
+(defn- word-hex [x] (u256/to-hex-string x))
+
+(def zero64 "0000000000000000000000000000000000000000000000000000000000000000")
+(def one64  "0000000000000000000000000000000000000000000000000000000000000001")
+(def neg1   "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+
+(defn- run-stack
+  "All stack words as canonical hex, oldest first."
+  [code-vec]
+  (let [m (core/run (core/make-machine code-vec))]
+    (mapv word-hex (:stack m))))
+
+(defn- run-status [code-vec]
+  (:status (core/run (core/make-machine code-vec))))
+
+(defn- max-word []
+  (u256/from-hex-string
+   "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))
+
+(defn- neg-word
+  "The two's-complement word for -n (n small)."
+  [n]
+  (u256/sub (u256/from-long 0) (u256/from-long n)))
+
+;; ---- arithmetic -----------------------------------------------------------
+
+(deftest add-sub-mul-wrap
+  (testing "ADD: 2 + 3 = 5"
+    (is (= ["0000000000000000000000000000000000000000000000000000000000000005"]
+           (run-stack (code "6003600201")))))
+  (testing "ADD wraps: max + 1 = 0"
+    (is (= [zero64]
+           (run-stack (vec (concat (push-word (max-word))
+                                   (code "600101")))))))
+  (testing "SUB: top minus second: 5 - 3 = 2"
+    (is (= ["0000000000000000000000000000000000000000000000000000000000000002"]
+           (run-stack (code "6003600503")))))
+  (testing "SUB underflow: 3 - 5 = -2 (two's complement)"
+    (is (= [(word-hex (neg-word 2))]
+           (run-stack (code "6005600303")))))
+  (testing "MUL: 6 * 7 = 42"
+    (is (= ["000000000000000000000000000000000000000000000000000000000000002a"]
+           (run-stack (code "6007600602"))))))
+
+(deftest div-mod-are-floor-with-zero-semantics
+  (testing "DIV: 17 / 5 = 3; DIV by zero = 0"
+    (is (= ["0000000000000000000000000000000000000000000000000000000000000003"]
+           (run-stack (code "6005601104"))))
+    (is (= [zero64]
+           (run-stack (code "6000601104")))))
+  (testing "MOD: 17 % 5 = 2; MOD by zero = 0"
+    (is (= ["0000000000000000000000000000000000000000000000000000000000000002"]
+           (run-stack (code "6005601106"))))
+    (is (= [zero64]
+           (run-stack (code "6000601106"))))))
+
+(deftest addmod-mulmod-full-precision
+  (testing "ADDMOD: (max + 2) mod 3 = 2 — no intermediate wrap"
+    (is (= ["0000000000000000000000000000000000000000000000000000000000000002"]
+           (run-stack (vec (concat (push-word (u256/from-long 3))
+                                   (push-word (u256/from-long 2))
+                                   (push-word (max-word))
+                                   [0x08])))))
+    (is (= ["0000000000000000000000000000000000000000000000000000000000000002"]
+           (run-stack (vec (concat (push-word (u256/from-long 3))
+                                   (push-word (u256/from-long 2))
+                                   (push-word (max-word))
+                                   [0x08]))))))
+  (testing "ADDMOD mod 0 → 0"
+    (is (= [zero64]
+           (run-stack (code "60036002600009"))))))
+
+(deftest sdiv-smod-signs
+  (testing "SDIV: -17 / 5 = -3 (truncation toward zero)"
+    (is (= [(word-hex (neg-word 3))]
+           (run-stack (vec (concat (push-word (u256/from-long 5))
+                                   (push-word (neg-word 17))
+                                   [0x05]))))))
+  (testing "SDIV: 17 / -5 = -3"
+    (is (= [(word-hex (neg-word 3))]
+           (run-stack (vec (concat (push-word (neg-word 5))
+                                   (push-word (u256/from-long 17))
+                                   [0x05]))))))
+  (testing "SDIV: -17 / -5 = 3"
+    (is (= ["0000000000000000000000000000000000000000000000000000000000000003"]
+           (run-stack (vec (concat (push-word (neg-word 5))
+                                   (push-word (neg-word 17))
+                                   [0x05]))))))
+  (testing "SMOD: -17 % 5 = -2 (sign follows dividend)"
+    (is (= [(word-hex (neg-word 2))]
+           (run-stack (vec (concat (push-word (u256/from-long 5))
+                                   (push-word (neg-word 17))
+                                   [0x07]))))))
+  (testing "SDIV edge: 2^255 / -1 = 2^255 (saturating)"
+    (is (= ["8000000000000000000000000000000000000000000000000000000000000000"]
+           (run-stack (vec (concat (push-word (neg-word 1))
+                                   (push-word (u256/from-hex-string
+                                               "0x8000000000000000000000000000000000000000000000000000000000000000"))
+                                   [0x05]))))))
+  (testing "SDIV by zero → 0"
+    (is (= [zero64]
+           (run-stack (vec (concat (push-word (u256/from-long 0))
+                                   (push-word (u256/from-long 17))
+                                   [0x05])))))))
+
+(deftest exp-squares
+  (testing "EXP: 3 ** 5 = 243"
+    (is (= ["00000000000000000000000000000000000000000000000000000000000000f3"]
+           (run-stack (code "600560030a")))))
+  (testing "EXP: x ** 0 = 1"
+    (is (= [one64]
+           (run-stack (code "600060070a"))))))
+
+(deftest signextend-op
+  (testing "SIGNEXTEND(0, 0x80): b=0 is the top operand"
+    (is (= ["ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff80"]
+           (run-stack (vec (concat (push-word (u256/from-long 0x80))
+                                   (push-word (u256/from-long 0))
+                                   [0x0b])))))))
+
+;; ---- comparisons & bitwise --------------------------------------------------
+
+(deftest comparisons
+  (testing "LT/GT/EQ produce 0/1 words"
+    (is (= [one64]  (run-stack (code "6003600210"))))
+    (is (= [zero64] (run-stack (code "6003600211"))))
+    (is (= [zero64] (run-stack (code "6003600214")))))
+  (testing "SLT: -2 < 1 → 1 (signed)"
+    (is (= [one64]
+           (run-stack (vec (concat (push-word (u256/from-long 1))
+                                   (push-word (neg-word 2))
+                                   [0x12])))))))
+
+(deftest bitwise-over-bytes
+  (testing "AND / OR / XOR / NOT"
+    (is (= ["0000000000000000000000000000000000000000000000000000000000000002"]
+           (run-stack (code "6003600216"))))
+    (is (= ["0000000000000000000000000000000000000000000000000000000000000003"]
+           (run-stack (code "6003600217"))))
+    (is (= [one64]
+           (run-stack (code "6003600218"))))
+    (is (= [neg1]
+           (run-stack (code "600019")))))
+  (testing "BYTE: byte 0 of 0x0102... is 0x01; byte 32 is 0"
+    (let [word (u256/from-hex-string
+                "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")]
+      (is (= [one64]
+             (run-stack (vec (concat (push-word word)
+                                     (push-word (u256/from-long 0))
+                                     [0x1a])))))
+      (is (= [zero64]
+             (run-stack (vec (concat (push-word word)
+                                     (push-word (u256/from-long 32))
+                                     [0x1a]))))))))
+
+(deftest shifts
+  (testing "SHL: 1 << 4 = 16 (shift is the top operand)"
+    (is (= ["0000000000000000000000000000000000000000000000000000000000000010"]
+           (run-stack (code "600160041b")))))
+  (testing "SHL by 256 → 0"
+    (is (= [zero64]
+           (run-stack (vec (concat (push-word (u256/from-long 1))
+                                   (push-word (u256/from-long 256))
+                                   [0x1b]))))))
+  (testing "SHR: 0x1000 >> 4 = 0x100 (shift is the top operand)"
+    (is (= ["0000000000000000000000000000000000000000000000000000000000000100"]
+           (run-stack (code "61100060041c")))))
+  (testing "SAR: -8 >> 1 = -4 (sign preserved)"
+    (is (= [(word-hex (neg-word 4))]
+           (run-stack (vec (concat (push-word (neg-word 8))
+                                   (push-word (u256/from-long 1))
+                                   [0x1d]))))))
+  (testing "SAR by ≥ 256: negative → all ones, positive → 0"
+    (is (= [neg1]
+           (run-stack (vec (concat (push-word (neg-word 8))
+                                   (push-word (u256/from-long 300))
+                                   [0x1d])))))
+    (is (= [zero64]
+           (run-stack (vec (concat (push-word (u256/from-long 1))
+                                   (push-word (u256/from-long 300))
+                                   [0x1d])))))))
+
+;; ---- memory, keccak, return ---------------------------------------------------
+
+(deftest mstore-mload
+  (testing "MSTORE then MLOAD round-trips a word"
+    (is (= ["000000000000000000000000000000000000000000000000000000000000002a"]
+           (run-stack (code "602a5f525f51"))))))
+
+(deftest keccak256-empty-and-abc
+  (testing "KECCAK256 of empty memory = keccak of empty"
+    (is (= ["c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"]
+           (run-stack (code "60005f20"))))))
+
+(deftest return-with-memory
+  (testing "RETURN cuts a memory slice (offset is the top operand)"
+    ;; MSTORE(0, 0x2a) puts 2a at byte 31; RETURN(offset=31, size=1)
+    (let [m (core/run (core/make-machine (code "602a5f526001601ff3")))]
+      (is (= :halted (:status m)))
+      (is (= [0x2a] (vec (:output m)))))))
+
+;; ---- flow ---------------------------------------------------------------------
+
+(deftest jump-jumpi-jumpdest
+  (testing "JUMP to a JUMPDEST then STOP"
+    ;; 0: PUSH1 03, 2: JUMP → 3: JUMPDEST, 4: STOP
+    (is (= :stopped (run-status (code "6003565b00")))))
+  (testing "JUMP to a byte that only LOOKS like JUMPDEST (push data) → :invalid"
+    ;; 0: PUSH1 05, 2: JUMP, 3: PUSH2 (immediates 5b 00 — the 5b at 4 is data)
+    (is (= :invalid (run-status (code "600556615b00")))))
+  (testing "JUMPI taken when cond != 0"
+    ;; 0: PUSH1 05 (dest), 2: PUSH1 01 (cond), 4: JUMPI → 5: JUMPDEST, 6: STOP
+    (is (= :stopped (run-status (code "60056001575b00")))))
+  (testing "JUMPI not taken when cond = 0 falls through to STOP"
+    ;; 0: PUSH1 07, 2: PUSH1 00, 4: JUMPI, 5: STOP (byte 6 is never reached)
+    (is (= :stopped (run-status (code "600760005700"))))))
+
+(deftest dup-swap-pop
+  (testing "DUP1 duplicates the top"
+    (is (= [one64
+            "0000000000000000000000000000000000000000000000000000000000000002"
+            "0000000000000000000000000000000000000000000000000000000000000002"]
+           (run-stack (code "6001600280")))))
+  (testing "SWAP1 exchanges top two"
+    (is (= ["0000000000000000000000000000000000000000000000000000000000000002"
+            one64]
+           (run-stack (code "6001600290")))))
+  (testing "POP drops the top"
+    (is (= [] (run-stack (code "600750"))))))
+
+(deftest push0-and-pc
+  (testing "PUSH0 pushes 0 (EIP-3855)"
+    (is (= [zero64] (run-stack (code "5f")))))
+  (testing "PC pushes its own index"
+    (is (= [one64]
+           (run-stack (code "5b58"))))))
+
+;; ---- exceptional paths --------------------------------------------------------
+
+(deftest invalid-opcodes-halt
+  (testing "0x0c (undefined in Paris) is :invalid"
+    (is (= :invalid (run-status (code "60010c")))))
+  (testing "explicit INVALID opcode is :invalid"
+    (is (= :invalid (run-status (code "fe")))))
+  (testing "stack underflow (ADD with one operand) is :invalid"
+    (is (= :invalid (run-status (code "600101")))))
+  (testing "truncated PUSH32 immediate is :invalid"
+    (is (= :invalid (run-status (code "7f01")))))
+  (testing "SLOAD halts :invalid until the storage slice wires it"
+    (is (= :invalid (run-status (code "600054"))))))
+
+(deftest stack-depth-limit
+  (testing "pushing past 1024 items halts :invalid"
+    (let [code-vec (vec (apply concat (repeat 1024 [0x5f 0x80])))]
+      (is (= :invalid (run-status code-vec))))))
+
+(deftest gas-charged-and-exhausted
+  (testing "gas decreases by the static schedule (PUSH+PUSH+ADD = 9)"
+    (let [m (core/run (core/make-machine (code "6003600201") 9))]
+      (is (= :stopped (:status m)))
+      (is (zero? (:gas m)))))
+  (testing "out of gas → :invalid with gas 0"
+    (let [m (core/run (core/make-machine (code "6003600201") 8))]
+      (is (= :invalid (:status m)))
+      (is (zero? (:gas m))))))
+
+(deftest machine-shape
+  (testing "make-machine defaults"
+    (let [m (core/make-machine (code "00"))]
+      (is (= 0 (:pc m)))
+      (is (= :running (:status m)))
+      (is (= [] (:stack m)))
+      (is (= [] (:calldata m))))))
