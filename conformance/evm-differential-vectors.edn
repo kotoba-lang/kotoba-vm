@@ -59,6 +59,38 @@
    :expect {:status :halted :stack []}
    :source "MUL, MSTORE, RETURN(0,32) -- Yellow Paper 0xf3"}
 
+  ;; --- control flow -------------------------------------------------------
+  ;; The nine vectors this file shipped with all passed while JUMP and JUMPI
+  ;; were transferring control nowhere, because not one of them contained a
+  ;; jump. Every vector below is written so that TAKING the branch and FALLING
+  ;; THROUGH land on different opcodes -- a vector whose two outcomes agree
+  ;; cannot detect which one happened.
+
+  {:id :control/jump-transfers-control
+   :hex "6004560c5b00"
+   :expect {:status :stopped}
+   :source "PUSH1 4; JUMP; INVALID; JUMPDEST; STOP -- Yellow Paper 0x56. Taken lands on the JUMPDEST at 4 and stops; falling through lands on the undefined 0x0c at 3. :stopped proves the jump was taken."}
+
+  {:id :control/jumpi-taken-when-condition-nonzero
+   :hex "60016006570c5b00"
+   :expect {:status :stopped}
+   :source "PUSH1 1; PUSH1 6; JUMPI; INVALID; JUMPDEST; STOP -- Yellow Paper 0x57 pops counter (destination) FIRST, condition second, so the destination is the top of the stack. Taken reaches the JUMPDEST at 6; falling through hits 0x0c at 5."}
+
+  {:id :control/jumpi-falls-through-when-condition-zero
+   :hex "6000600657005b0c"
+   :expect {:status :stopped}
+   :source "PUSH1 0; PUSH1 6; JUMPI; STOP; JUMPDEST; INVALID -- same shape, condition zero. Correct fall-through reaches the STOP at 5; a wrongly-taken branch reaches the undefined 0x0c at 7. This is the direction that catches swapped operands, which the taken case alone cannot."}
+
+  {:id :control/jump-backwards-loops-until-gas-is-gone
+   :hex "5b600056"
+   :expect {:status :invalid :gas 0}
+   :source "JUMPDEST; PUSH1 0; JUMP -- an unbounded backward loop. A working JUMP consumes the whole allowance and halts exceptionally; a JUMP that silently falls through runs off the end of the code and reports the ordinary :stopped of an implicit STOP. The two are trivial to tell apart and were indistinguishable to this suite before."}
+
+  {:id :control/jump-to-a-non-jumpdest-is-rejected
+   :hex "6003560000"
+   :expect {:status :invalid}
+   :source "PUSH1 3; JUMP; STOP; STOP -- offset 3 holds 0x00, not JUMPDEST. Yellow Paper 9.4.2: an invalid jump destination is exceptional halting. Kept as the negative control for the four above, so a change that made every jump succeed would not pass."}
+
   {:id :control/invalid-opcode-consumes-all-gas
    :hex "0c"
    :expect {:status :invalid :gas 0}

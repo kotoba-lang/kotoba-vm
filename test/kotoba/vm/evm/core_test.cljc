@@ -237,18 +237,35 @@
 ;; ---- flow ---------------------------------------------------------------------
 
 (deftest jump-jumpi-jumpdest
-  (testing "JUMP to a JUMPDEST then STOP"
-    ;; 0: PUSH1 03, 2: JUMP → 3: JUMPDEST, 4: STOP
-    (is (= :stopped (run-status (code "6003565b00")))))
+  ;; Rewritten 2026-09-06. Every case below now lands TAKEN and FALL-THROUGH
+  ;; on different opcodes. The previous versions did not, and the deftest
+  ;; therefore passed throughout the period in which JUMP transferred control
+  ;; nowhere: `6003565b00` reaches the JUMPDEST at 3 and stops whether or not
+  ;; the jump is taken, so :stopped said nothing about the jump.
+  ;;
+  ;; The two JUMPI cases additionally encoded the wrong operand order --
+  ;; their comments read "PUSH1 05 (dest), PUSH1 01 (cond)". Yellow Paper
+  ;; 0x57 pops `counter` FIRST and `b` second, so the DESTINATION is the top
+  ;; of the stack and is therefore pushed LAST. They are swapped here to
+  ;; match the spec, and the implementation was corrected to agree.
+  (testing "JUMP transfers control (taken → JUMPDEST; fall-through → INVALID)"
+    ;; 0: PUSH1 04, 2: JUMP, 3: 0c (undefined), 4: JUMPDEST, 5: STOP
+    (is (= :stopped (run-status (code "6004560c5b00")))))
   (testing "JUMP to a byte that only LOOKS like JUMPDEST (push data) → :invalid"
     ;; 0: PUSH1 05, 2: JUMP, 3: PUSH2 (immediates 5b 00 — the 5b at 4 is data)
     (is (= :invalid (run-status (code "600556615b00")))))
+  (testing "a backward JUMP really loops, so an unbounded one exhausts gas"
+    ;; 0: JUMPDEST, 1: PUSH1 00, 3: JUMP.  A JUMP that fell through would run
+    ;; off the end of the code and report the implicit-STOP :stopped instead.
+    (is (= :invalid (run-status (code "5b600056")))))
   (testing "JUMPI taken when cond != 0"
-    ;; 0: PUSH1 05 (dest), 2: PUSH1 01 (cond), 4: JUMPI → 5: JUMPDEST, 6: STOP
-    (is (= :stopped (run-status (code "60056001575b00")))))
+    ;; 0: PUSH1 01 (cond), 2: PUSH1 06 (dest, on top), 4: JUMPI,
+    ;; 5: 0c (undefined), 6: JUMPDEST, 7: STOP
+    (is (= :stopped (run-status (code "60016006570c5b00")))))
   (testing "JUMPI not taken when cond = 0 falls through to STOP"
-    ;; 0: PUSH1 07, 2: PUSH1 00, 4: JUMPI, 5: STOP (byte 6 is never reached)
-    (is (= :stopped (run-status (code "600760005700"))))))
+    ;; 0: PUSH1 00 (cond), 2: PUSH1 06 (dest, on top), 4: JUMPI, 5: STOP,
+    ;; 6: JUMPDEST, 7: 0c — a wrongly-taken branch reaches the undefined 0c.
+    (is (= :stopped (run-status (code "6000600657005b0c"))))))
 
 (deftest dup-swap-pop
   (testing "DUP1 duplicates the top"
