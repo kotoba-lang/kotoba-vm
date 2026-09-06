@@ -1,0 +1,65 @@
+;; conformance/evm-differential-vectors.edn
+;;
+;; Differential vectors for the kototama :evm/v1 profile. Each :expect is a
+;; value an independent Ethereum implementation produces for the same bytecode
+;; -- a constant from the Yellow Paper, a canonical hash, or a semantics the
+;; spec fixes -- NOT a value read back out of kotoba-vm.
+;;
+;; This is the START of the suite kototama's spec names
+;; (:profile-suites {:evm/v1 [:ethereum-general-state-tests :differential-execution]}),
+;; not the suite. Passing every vector here does NOT earn the :bytecode level;
+;; kototama sets :floating-evm-claim-forbidden true and
+;; :differential-tests-required [:semantic :bytecode :state], and
+;; ethereum/tests has not been run against this implementation at all.
+;;
+;; What it IS for: a deterministic judge, so the EVM axis has the same kind of
+;; fitness function the codegen axis has in perfgate -- a number that moves.
+
+{:schema :kotoba.vm.evm/differential-vectors-v1
+ :hardfork :paris
+ :vectors
+ [{:id :arith/mul
+   :hex "6006600702"
+   :expect {:status :stopped :stack [42]}
+   :source "PUSH1 6, PUSH1 7, MUL -- Yellow Paper 0x02"}
+
+  {:id :arith/add
+   :hex "6003600201"
+   :expect {:status :stopped :stack [5]}
+   :source "PUSH1 3, PUSH1 2, ADD -- Yellow Paper 0x01"}
+
+  {:id :arith/sub-underflow-wraps
+   :hex "6003600503"
+   :expect {:status :stopped :stack [2]}
+   :source "SUB is 2^256-modular; 5-3=2 -- Yellow Paper 0x03"}
+
+  {:id :arith/div-by-zero-is-zero
+   :hex "6000600504"
+   :expect {:status :stopped :stack [0]}
+   :source "EVM DIV by zero yields 0, it does not trap -- Yellow Paper 0x04"}
+
+  {:id :hash/keccak256-empty
+   :hex "6000600020"
+   :expect {:status :stopped
+            :stack [89477152217924674838424037953991966239322087453347756267410168184682657981552]}
+   :source "keccak256(\"\") = 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470 -- the canonical empty-input Keccak digest, identical in every Ethereum client"}
+
+  {:id :control/stop
+   :hex "00"
+   :expect {:status :stopped :stack []}
+   :source "STOP halts normally -- Yellow Paper 0x00"}
+
+  {:id :control/revert
+   :hex "60006000fd"
+   :expect {:status :reverted :stack []}
+   :source "REVERT(0,0) -- EIP-140"}
+
+  {:id :control/return
+   :hex "600660070260005260206000f3"
+   :expect {:status :halted :stack []}
+   :source "MUL, MSTORE, RETURN(0,32) -- Yellow Paper 0xf3"}
+
+  {:id :control/invalid-opcode-consumes-all-gas
+   :hex "0c"
+   :expect {:status :invalid :gas 0}
+   :source "An undefined opcode is exceptional halting and consumes the whole gas allowance -- Yellow Paper 9.4.2. This vector is the one most likely to catch a lenient interpreter: returning :stopped, or leaving gas unspent, are both wrong."}]}
