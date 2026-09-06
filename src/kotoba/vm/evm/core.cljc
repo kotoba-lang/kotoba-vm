@@ -1118,10 +1118,17 @@
              (invalid m "stack underflow")
              (let [[stack dest] r]
                (step-jump (assoc m :stack stack) dest))))
+    ;; JUMPI pops the DESTINATION first and the condition second (Yellow
+    ;; Paper 0x57: `counter` then `b`). `take-2` yields [stack top second],
+    ;; so the destination is the second element of that tuple. Until
+    ;; 2026-09-06 these two were bound the other way round, which read the
+    ;; condition off the deeper slot and jumped to whatever the caller meant
+    ;; as the condition -- a JUMPI was correct only when dest and cond
+    ;; happened to coincide.
     0x57 (let [r (take-2 m)]
            (if (= :underflow r)
              (invalid m "stack underflow")
-             (let [[stack cond dest] r]
+             (let [[stack dest cond] r]
                (if (u256/eq cond zero-word)
                  (assoc m :stack stack :pc (inc (:pc m)))
                  (step-jump (assoc m :stack stack) dest)))))
@@ -1151,13 +1158,32 @@
       (and (>= op 0x90) (<= op 0x9f)) (step-swap m op)
       :else (invalid m "invalid opcode"))))
 
+(def ^:private jump-ops
+  "JUMP and JUMPI. Named because they were missing from `next-pc`'s test for
+  three months while its docstring said they were handled."
+  #{0x56 0x57})
+
 (defn- next-pc
   "pc after an op, given pc0 (the pc of the opcode just executed).
-  PUSH1..32 handlers already advanced :pc past their immediate — keep
-  their value; every other non-jump op advances by 1."
+
+  Two families set :pc themselves and must keep it: PUSH1..32 advance past
+  their immediate, and JUMP/JUMPI set a destination. Everything else
+  advances by one.
+
+  Until 2026-09-06 this tested only the PUSH range, so `step-jump`'s
+  `(assoc m :pc p)` was overwritten by `(inc pc0)` on the very next line and
+  **JUMP and JUMPI never transferred control** -- they popped their operands,
+  charged their gas, and fell through. The docstring already said `every
+  other non-jump op advances by 1`; the code had no jump case, so the comment
+  described the intent and nothing enforced it.
+
+  JUMPI with a false condition leaves :pc at pc0, so it falls to `(inc pc0)`
+  and still fails through correctly. A taken jump can never land on its own
+  opcode (0x56/0x57 are not 0x5b), so `(not= (:pc m) pc0)` cannot hide one."
   [m op pc0]
-  (if (and (>= op 0x60) (<= op 0x7f)
-           (not= (:pc m) pc0))
+  (if (and (not= (:pc m) pc0)
+           (or (and (>= op 0x60) (<= op 0x7f))
+               (contains? jump-ops op)))
     (:pc m)
     (inc pc0)))
 
