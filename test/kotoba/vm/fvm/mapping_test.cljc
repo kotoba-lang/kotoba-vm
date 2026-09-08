@@ -7,7 +7,7 @@
   and builtin-actors (actors/evm/src/lib.rs); the blake2b / keccak
   values are computed through the libraries under test so the tests
   exercise real code paths, not fixtures."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.vm.evm.core :as core]
             [kotoba.vm.evm.u256 :as u256]

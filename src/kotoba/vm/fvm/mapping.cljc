@@ -38,7 +38,7 @@
   slice ≥ 2^24, big-endian. The Solidity-side selector of
   handle_filecoin_method is 0x868e10c4 (keccak-256 of the signature,
   via kotoba.vm.keccak)."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [blake2.core :as blake2]
             [kotoba.vm.keccak :as keccak]
             [kotoba.vm.evm.u256 :as u256]))
@@ -118,7 +118,7 @@
   "20-byte eth address as lowercase hex, from 0x-hex / bare hex / bytes.
   Throws on any other shape."
   [addr]
-  (let [hx (str/lower-case
+  (let [hx (str/lower
             (cond
               (string? addr) (if (str/starts-with? addr "0x") (subs addr 2) addr)
               (sequential? addr) (apply str (map hex-byte addr))

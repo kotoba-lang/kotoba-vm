@@ -12,7 +12,7 @@
 (ns kotoba.vm.evm-conformance
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.vm.evm.core :as evm]))
 
 (def vector-file "conformance/evm-differential-vectors.edn")

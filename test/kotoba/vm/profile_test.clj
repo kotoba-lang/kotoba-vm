@@ -5,7 +5,7 @@
   between the profile and the code fails here, not in review."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.vm.fvm.mapping :as mapping]))
 

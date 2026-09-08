@@ -9,7 +9,12 @@
  ;; Filecoin protocol clients (`io-filecoin`, `cloud-filecoin`, Lotus,
  ;; builtin-actors, ref-fvm) are other repos. They do not appear here,
  ;; not even as test extras. Shape is FIP-0030; bytes are not Filecoin's.
- :deps {io.github.kotoba-lang/io-ipld
+ :deps {
+        ;; kotoba.lang.text, not clojure.string. Pinned as an explicit floor:
+        ;; tools.deps takes the NEWEST sha it is shown, so without a floor here
+        ;; this repo silently rides whatever a sibling happens to name.
+        io.github.kotoba-lang/text {:git/sha "73bdb13ae7a3d004b44bca08be03a3191157a38f"}
+       io.github.kotoba-lang/io-ipld
         {:git/url "https://github.com/kotoba-lang/io-ipld.git"
          :git/sha "8bc2dde5ae47129e49a957131c40313b6b02731c"}
         io.github.kotoba-lang/nio
