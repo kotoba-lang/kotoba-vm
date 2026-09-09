@@ -28,7 +28,7 @@
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps {io.github.cognitect-labs/test-runner
-                      {:git/tag "v0.5.1" :git/sha "dfb30dd"}
+                      {:git/tag "v0.5.1" :git/sha "dfb30dd6605cb6c0efc275e1df1736f6e90d4d73"}
                       ;; The real `:invoke-fn` consumer, here and only here.
                       ;; `src/` must not load it. A bind that only exists in
                       ;; comments is a comment; `vm_inga_bind_test` constructs
