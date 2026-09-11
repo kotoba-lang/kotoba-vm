@@ -81,16 +81,16 @@
           (str path " requires a Filecoin namespace")))))
 
 (defn- dep-tree
-  "Production tree: `clojure -Stree` with no aliases. Empty or failed
+  "Production tree: `kbb -Stree` with no aliases. Empty or failed
   output is not a pass — silence is not 'no Filecoin'."
   []
-  (let [{:keys [exit out err]} (sh/sh "clojure" "-Stree")]
+  (let [{:keys [exit out err]} (sh/sh "kbb" "-Stree")]
     {:exit exit :out (str out) :err (str err)}))
 
 (deftest production-tree-does-not-mention-filecoin
   (let [{:keys [exit out err]} (dep-tree)
         text (str out \newline err)]
-    (is (zero? exit) (str "clojure -Stree failed\n" text))
+    (is (zero? exit) (str "kbb -Stree failed\n" text))
     (is (re-find #"io-ipld" out)
         "tree did not even mention io-ipld — refusing to treat an empty scan as clean")
     (is (not (re-find forbidden-coord text))
