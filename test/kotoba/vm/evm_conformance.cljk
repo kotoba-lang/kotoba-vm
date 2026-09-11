@@ -1,4 +1,4 @@
-;; test/kotoba/vm/evm_conformance.clj — run the :evm/v1 differential vectors.
+;; test/kotoba/vm/evm_conformance.cljk — run the :evm/v1 differential vectors.
 ;;
 ;;   clojure -Sdeps '{:paths ["src" "test"]}' -M -m kotoba.vm.evm-conformance
 ;;
