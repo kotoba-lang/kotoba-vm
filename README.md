@@ -124,7 +124,7 @@ A deployment constructs the machine. `kotoba-vm` does not depend on `inga`.
   :invoke-fn invoke})
 ```
 
-`test/kotoba/vm_inga_bind_test.clj` is the proof: an `:actor-call` through
+`test/kotoba/vm_inga_bind_test.cljk` is the proof: an `:actor-call` through
 that machine advances only the callee's state CID. The production `:deps`
 set remains `{io-ipld}`; a gate fails if Filecoin or inga arrive there.
 

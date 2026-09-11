@@ -72,4 +72,4 @@
 
 (deftest u256-test-exercises-big-hex-literals
   (testing "u256 evidence exercises 2^53+ values as hex literals"
-    (is (source-hex? (slurp "test/kotoba/vm/evm/u256_test.cljc")))))
+    (is (source-hex? (slurp "test/kotoba/vm/evm/u256_test.cljk")))))
