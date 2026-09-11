@@ -131,8 +131,8 @@ set remains `{io-ipld}`; a gate fails if Filecoin or inga arrive there.
 ## Test / lint
 
 ```bash
-clojure -M:test
-clojure -M:lint
+kbb -M:test
+kbb -M:lint
 ```
 
 The suite is written to fail if the claimed property is broken: determinism, fuel-as-value, IPLD roundtrip, cross-actor call, nested revert, store isolation, boundary accounting, the inga-shaped seam, CID-mismatch as throw, the inga bind, and a Filecoin-free production classpath.
