@@ -67,9 +67,9 @@
       "23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01"))
   (testing "MOD by zero is defined as 0 (EVM semantics, not an error)"
     (is (= u256/zero-hex (u256/to-hex-string (u256/mod (hx "0x1234") (hx "0x0"))))))
-  (testing "DIV by zero throws (exceptional halt one layer up)"
-    (is (thrown? #?(:clj Exception :cljs js/Error)
-                 (u256/div (hx "0x1") (hx "0x0"))))))
+  (testing "DIV by zero is defined as 0 (EVM semantics, like MOD)"
+    (is (= u256/zero-hex (u256/to-hex-string (u256/div (hx "0x1") (hx "0x0")))))
+    (is (= u256/zero-hex (u256/to-hex-string (u256/div (hx "0x0") (hx "0x1234")))))))
 
 (deftest comparisons
   (testing "lt / gt / eq on values that differ only past 2^53"
