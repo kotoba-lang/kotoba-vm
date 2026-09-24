@@ -11,7 +11,7 @@
 ;; claimed level, so "the suite did not run" must not be able to supply it.
 (ns kotoba.vm.evm-conformance
   (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
+            [kotoba.io :as io]
             [kotoba.lang.text :as str]
             [kotoba.vm.evm.core :as evm]))
 
@@ -33,7 +33,7 @@
 
 (defn -main [& _]
   (let [f (io/file vector-file)]
-    (when-not (.exists f)
+    (when-not (io/exists? f)
       (binding [*out* *err*] (println "REFUSED: no" vector-file "- cannot report a pass"))
       (System/exit 2))
     (let [{:keys [vectors hardfork]} (edn/read-string (slurp f))]

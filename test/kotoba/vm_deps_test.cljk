@@ -8,7 +8,7 @@
   adding Filecoin here would make 'FVM-shaped' into 'runs Filecoin'."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.java.shell :as sh]
+            [kotoba.process :as sh]
             [kotoba.test :refer [deftest is testing]]))
 
 (def production-deps
