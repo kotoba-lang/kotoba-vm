@@ -1,6 +1,6 @@
 (ns kotoba.vm.evm.storage-test
   "Vectors for the mock storage (KAMT shape) of the storage+env slice."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.vm.evm.storage :as storage]
             [kotoba.vm.evm.u256 :as u256]))
 

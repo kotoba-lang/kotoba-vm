@@ -2,7 +2,7 @@
   "Vectors for the evm-core slice. Code is built as byte vectors from
   hex strings; expected words use the u256 surface so the same file
   passes on :clj and :cljs."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.vm.evm.core :as core]
             [kotoba.vm.evm.u256 :as u256]))
 

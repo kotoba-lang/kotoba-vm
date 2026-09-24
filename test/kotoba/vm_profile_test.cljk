@@ -1,7 +1,7 @@
 (ns kotoba.vm-profile-test
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.test :refer [deftest is testing]]))
+            [kotoba.test :refer [deftest is testing]]))
 
 (def profile
   (-> "kototama-profile.edn" io/file slurp edn/read-string))

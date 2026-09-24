@@ -9,7 +9,7 @@
   Call-stack note: the operand pushed FIRST sits deepest. For CALL the
   test pushes (bottom→top) ret-size, ret-off, in-size, in-off, value,
   callee, gas — gas is the TOP operand, pushed last."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.vm.evm.core :as core]
             [kotoba.vm.evm.calls :as calls]
             [kotoba.vm.evm.env :as env]

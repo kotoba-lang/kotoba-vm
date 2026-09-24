@@ -2,7 +2,7 @@
   "Vectors for the u256 slice. Every literal past 2^53 is built from a
   hex string — JS numbers lose precision there, so the same file must
   pass on :clj and :cljs (the CI matrix runs both)."
-  (:require [clojure.test :refer [are deftest is testing]]
+  (:require [kotoba.test :refer [are deftest is testing]]
             [kotoba.vm.evm.u256 :as u256]))
 
 (defn- hx
