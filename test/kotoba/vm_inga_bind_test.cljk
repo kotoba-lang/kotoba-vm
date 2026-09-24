@@ -7,7 +7,7 @@
   inga is a test extra-dep. This namespace is the composition site.
   Production `src/` still does not import consensus, and nothing here
   imports Filecoin — the guest is the v1 IPLD register machine."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [inga.state :as state]
             [ipld.core :as ipld]
             [kotoba.vm :as vm]

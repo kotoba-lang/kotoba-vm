@@ -4,7 +4,7 @@
   Code is built from hex strings as byte vectors; every value past 2^53
   rides the u256 hex-string surface, so the same file passes on :clj
   and :cljs."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.vm.evm.core :as core]
             [kotoba.vm.evm.env :as env]
             [kotoba.vm.evm.u256 :as u256]))
