@@ -7,7 +7,7 @@
   inga is a test extra-dep. This namespace is the composition site.
   Production `src/` still does not import consensus, and nothing here
   imports Filecoin — the guest is the v1 IPLD register machine."
-  (:require [kotoba.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.test :refer [deftest is testing]]
             [inga.state :as state]
             [ipld.core :as ipld]
             [kotoba.vm :as vm]
@@ -94,6 +94,6 @@
           init (ipld/put-node! put! {"count" 0})
           _ (swap! store assoc code (ipld/encode {"not" "code"}))
           m (bind-machine store)]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"CID mismatch"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"CID mismatch"
                             ((:apply-fn m) ((:init-fn m))
                              {:height 3 :ops [(put-alice code init) (call-inc)]}))))))

@@ -168,7 +168,7 @@
               (if (nil? ops)
                 (assoc ctx :aborted? true :last-error :not-callable)
                 (run-ops ctx ops)))))))
-    (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) e
+    (catch :default e
       (let [t (:type (ex-data e))]
         (cond
           (= t :ipld/cid-mismatch) (throw e)
