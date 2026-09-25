@@ -38,7 +38,7 @@
   slice ≥ 2^24, big-endian. The Solidity-side selector of
   handle_filecoin_method is 0x868e10c4 (keccak-256 of the signature,
   via kotoba.vm.keccak)."
-  (:require [kotoba.lang.text :as str]
+  (:require [kotoba.bytes :as kbytes] [kotoba.lang.text :as str]
             [blake2.core :as blake2]
             [kotoba.vm.keccak :as keccak]
             [kotoba.vm.evm.u256 :as u256]))
@@ -254,7 +254,7 @@
 (defn- utf8-bytes
   "ASCII signature string → byte vector (both runtimes)."
   [s]
-  #?(:clj (mapv int (.getBytes ^String s "UTF-8"))
+  #?(:clj (mapv int (kbytes/utf8-bytes ^String s))
      :cljs (mapv #(.charCodeAt ^js % 0) (vec s))))
 
 (def native-method-selector
