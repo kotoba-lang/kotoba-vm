@@ -10,10 +10,12 @@ import os
 import subprocess
 import sys
 
-WORKTREE = os.environ.get(
-    "KOTOBA_VM_EVM_WORKTREE",
+WORKTREE_CANDIDATES = [
+    os.environ.get("KOTOBA_VM_EVM_WORKTREE", ""),
+    os.path.expanduser("~/.itonami-fleet/worktrees/bot-kotoba-vm-evm"),
     os.path.expanduser("~/.gftd/worktrees/kotoba-vm-evm"),
-)
+]
+WORKTREE = next((p for p in WORKTREE_CANDIDATES if p and os.path.isdir(p)), WORKTREE_CANDIDATES[-1])
 
 
 def run(cmd, cwd=None, timeout=120):
@@ -45,15 +47,16 @@ def main():
     def exists(p):
         return os.path.isfile(os.path.join(WORKTREE, p))
 
+    # kotoba-vm uses the .cljk extension; keep these in sync with main.
     files = {
-        "u256": "src/kotoba/vm/evm/u256.cljc",
-        "u256_test": "test/kotoba/vm/evm/u256_test.cljc",
-        "core": "src/kotoba/vm/evm/core.cljc",
-        "core_test": "test/kotoba/vm/evm/core_test.cljc",
-        "storage_env": "src/kotoba/vm/evm/env.cljc",
-        "calls": "src/kotoba/vm/evm/calls.cljc",
-        "fvm_map": "src/kotoba/vm/fvm.cljc",
-        "fvm_test": "test/kotoba/vm/fvm_test.cljc",
+        "u256": "src/kotoba/vm/evm/u256.cljk",
+        "u256_test": "test/kotoba/vm/evm/u256_test.cljk",
+        "core": "src/kotoba/vm/evm/core.cljk",
+        "core_test": "test/kotoba/vm/evm/core_test.cljk",
+        "storage_env": "src/kotoba/vm/evm/env.cljk",
+        "calls": "src/kotoba/vm/evm/calls.cljk",
+        "fvm_map": "src/kotoba/vm/fvm/mapping.cljk",
+        "fvm_test": "test/kotoba/vm/fvm/mapping_test.cljk",
     }
     present = {k: exists(p) for k, p in files.items()}
 
@@ -81,7 +84,7 @@ def main():
         pass
 
     # slice selection (mechanical, in SOUL-defined order)
-    # fevm-mapping is done when src/kotoba/vm/fvm/mapping.cljc exists
+    # fevm-mapping is done when src/kotoba/vm/fvm/mapping.cljk exists
     if not present["u256"]:
         nxt = "evm-u256"
     elif not present["core"]:
@@ -90,7 +93,7 @@ def main():
         nxt = "evm-storage+env"
     elif not present["calls"]:
         nxt = "evm-calls"
-    elif not os.path.isfile(os.path.join(WORKTREE, "src/kotoba/vm/fvm/mapping.cljc")):
+    elif not present["fvm_map"]:
         nxt = "fevm-mapping"
     elif evm_status not in ("partial",):
         nxt = "profile-update"
@@ -101,6 +104,7 @@ def main():
         json.dumps(
             {
                 "state": "ok",
+                "worktree": WORKTREE,
                 "head": head,
                 "dirty_files": dirty,
                 "files_present": present,
