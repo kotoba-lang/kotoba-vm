@@ -136,3 +136,9 @@ kbb -M:lint
 ```
 
 The suite is written to fail if the claimed property is broken: determinism, fuel-as-value, IPLD roundtrip, cross-actor call, nested revert, store isolation, boundary accounting, the inga-shaped seam, CID-mismatch as throw, the inga bind, and a Filecoin-free production classpath.
+
+## Explicit v2 execution
+
+See [execution v2](docs/execution-v2.md) and [owner contract](spec/execution-v2.edn).
+New target bindings, authority-issued invocation/leases and authenticated admission
+are explicit APIs; existing v1 runtime defaults remain compatible.

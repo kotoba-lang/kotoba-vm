@@ -100,6 +100,7 @@
    0x32 :base       ;; ORIGIN
    0x33 :base       ;; CALLER
    0x34 :base       ;; CALLVALUE
+   0x35 :verylow    ;; CALLDATALOAD (no memory expansion)
    0x3a :base       ;; GASPRICE
    0x3d :base       ;; RETURNDATASIZE (0 until the calls slice)
    0x40 :base       ;; BLOCKHASH (mock map)
@@ -396,7 +397,7 @@
                :cljs (+ (to-big a) (to-big b)))
           n' (to-big n)
           r #?(:clj (.remainder ^java.math.BigInteger s ^java.math.BigInteger n')
-               :cljs (rem s n'))]
+               :cljs (- s (* n' (/ s n'))))]
       (from-big r))))
 
 (defn- u-mulmod
@@ -409,7 +410,7 @@
                :cljs (* (to-big a) (to-big b)))
           n' (to-big n)
           r #?(:clj (.remainder ^java.math.BigInteger p ^java.math.BigInteger n')
-               :cljs (rem p n'))]
+               :cljs (- p (* n' (/ p n'))))]
       (from-big r))))
 
 (defn- u-exp
@@ -559,13 +560,15 @@
 
 (defn- take-1
   [m]
-  (let [[ps rest] (pops (:stack m) 1)]
-    (if (= :underflow ps) :underflow [rest (nth ps 0)])))
+  (let [popped (pops (:stack m) 1)]
+    (if (= :underflow popped) :underflow
+        (let [[ps rest] popped] [rest (nth ps 0)]))))
 
 (defn- take-2
   [m]
-  (let [[ps rest] (pops (:stack m) 2)]
-    (if (= :underflow ps) :underflow [rest (nth ps 1) (nth ps 0)])))
+  (let [popped (pops (:stack m) 2)]
+    (if (= :underflow popped) :underflow
+        (let [[ps rest] popped] [rest (nth ps 1) (nth ps 0)]))))
 
 ;; ---- storage & environment (evm-storage+env slice) ---------------------------
 
@@ -641,6 +644,24 @@
       (let [[stack number] r
             e (get m :env env/default-env)
             stack' (push-word stack (env/blockhash-of e number))]
+        (if (= :overflow stack')
+          (invalid m "stack overflow")
+          (assoc m :stack stack' :pc (inc (:pc m))))))))
+
+(defn- step-calldataload
+  "Read 32 bytes from calldata, zero-padded. Offsets are u256: compare with
+  the bounded calldata length BEFORE converting to a host index. A huge offset
+  produces zero rather than overflow or exceptional halt."
+  [m]
+  (let [r (take-1 m)]
+    (if (= :underflow r)
+      (invalid m "stack underflow")
+      (let [[stack offset] r data (:calldata m)
+            bytes (if (u256/lt offset (u256/from-long (count data)))
+                    (let [start (word->long offset)]
+                      (mapv #(get data (+ start %) 0) (range 32)))
+                    (vec (repeat 32 0)))
+            stack' (push-word stack (bytes->word bytes))]
         (if (= :overflow stack')
           (invalid m "stack overflow")
           (assoc m :stack stack' :pc (inc (:pc m))))))))
@@ -1100,6 +1121,7 @@
     0x31 (step-balance m)
     0x32 (let [e (get m :env env/default-env)] (step-env-const m (:origin e)))
     0x33 (let [e (get m :env env/default-env)] (step-env-const m (:caller e)))
+    0x35 (step-calldataload m)
     0x34 (let [e (get m :env env/default-env)] (step-env-const m (:callvalue e)))
     0x3a (let [e (get m :env env/default-env)] (step-env-const m (:gasprice e)))
     0x3d (step-returndatasize m)

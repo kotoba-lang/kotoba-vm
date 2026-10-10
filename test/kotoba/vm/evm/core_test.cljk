@@ -323,3 +323,20 @@
       (is (= :running (:status m)))
       (is (= [] (:stack m)))
       (is (= [] (:calldata m))))))
+
+
+(deftest calldata-load-is-padded-and-never-narrows-an-unbounded-offset
+  (doseq [[offset data expected]
+          [[0 [223 254 173 208] (str "dffeadd0" (apply str (repeat 56 "0")))]
+           [1 [1 2 3] (str "0203" (apply str (repeat 60 "0")))]
+           [3 [1 2 3] (apply str (repeat 64 "0"))]]]
+    (let [machine (core/run (core/make-machine [0x60 offset 0x35 0x00] 100 data))]
+      (is (= :stopped (:status machine)))
+      (is (= expected (u256/to-hex-string (peek (:stack machine)))))
+      (is (= 94 (:gas machine)))))
+  (let [huge (vec (concat [0x7f] (repeat 32 255) [0x35 0x00]))
+        machine (core/run (core/make-machine huge 100 [1 2 3]))]
+    (is (= :stopped (:status machine)))
+    (is (= (apply str (repeat 64 "0")) (u256/to-hex-string (peek (:stack machine))))))
+  (is (= :invalid (:status (core/run (core/make-machine [0x35] 100 [1])))))
+)
