@@ -7,7 +7,10 @@
   Adding an interpreter to inga's runtime set is a different repo's rule;
   adding Filecoin here would make 'FVM-shaped' into 'runs Filecoin'."
   (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
+            #?(:clj [clojure.java.io :as io]
+               :cljs ["node:fs" :as fs]
+               :default [clojure.java.io :as io])
+            #?(:cljs ["node:path" :as path])
             [kotoba.process :as sh]
             [kotoba.test :refer [deftest is testing]]))
 
@@ -36,9 +39,21 @@
   (edn/read-string (slurp "deps.edn")))
 
 (defn- src-files []
-  (->> (file-seq (io/file "src"))
-       (filter #(.isFile ^java.io.File %))
-       (filter #(re-find #"\.clj[cs]?$" (.getName ^java.io.File %)))))
+  #?(:clj
+     (->> (file-seq (io/file "src"))
+          (filter #(.isFile ^java.io.File %))
+          (filter #(re-find #"\.clj[cs]?$" (.getName ^java.io.File %))))
+     :cljs
+     (letfn [(walk [dir]
+               (mapcat (fn [entry]
+                         (let [file (.join path dir (.-name entry))]
+                           (cond
+                             (.isDirectory entry) (walk file)
+                             (and (.isFile entry)
+                                  (re-find #"\.clj[cs]?$" file)) [file]
+                             :else [])))
+                       (array-seq (.readdirSync fs dir #js {:withFileTypes true}))))]
+       (walk "src"))))
 
 (defn- coords-in [m]
   (into []
@@ -74,7 +89,7 @@
 (deftest src-does-not-require-inga-or-filecoin
   (doseq [f (src-files)]
     (let [text (slurp f)
-          path (.getPath ^java.io.File f)]
+          path #?(:clj (.getPath ^java.io.File f) :cljs f)]
       (is (not (re-find #"\[inga[\./]" text))
           (str path " requires inga — that makes the VM a consensus-layer VM"))
       (is (not (re-find #"\[(filecoin|io-filecoin|cloud-filecoin|ref-fvm|lotus)[\./\s]" text))

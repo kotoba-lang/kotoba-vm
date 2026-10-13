@@ -1,0 +1,69 @@
+name: Kototama portable program
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  canonical-program:
+    name: canonical Amu program on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Babashka and KBB
+        shell: bash
+        env:
+          KOTOBA_REF: 36f577aeedb6789af98e0c0cf1f60bda43c5c520
+          ENGINE_REF: 1675e6aab65d5a99e37840cc5012bc2eca6f4a07
+          BB_VERSION: 1.12.218
+        run: |
+          set -euo pipefail
+          runner_temp="$(cygpath -u "$RUNNER_TEMP" 2>/dev/null || printf '%s' "$RUNNER_TEMP")"
+          root="$runner_temp/kbb"
+          mkdir -p "$root"
+          fetch() {
+            git init -q "$root/$1"
+            git -C "$root/$1" fetch -q --depth 1 "https://github.com/kotoba-lang/$1.git" "$2"
+            git -C "$root/$1" checkout -q FETCH_HEAD
+          }
+          mkdir -p "$root/bin"
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64)  bbos=linux-amd64-static; archive=tar.gz ;;
+            Linux-aarch64) bbos=linux-aarch64-static; archive=tar.gz ;;
+            Darwin-arm64)  bbos=macos-aarch64; archive=tar.gz ;;
+            Darwin-x86_64) bbos=macos-amd64; archive=tar.gz ;;
+            MINGW64_NT-*-x86_64|MSYS_NT-*-x86_64)
+              bbos=windows-amd64; archive=zip ;;
+            *) echo "unsupported runner: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+          esac
+          url="https://github.com/babashka/babashka/releases/download/v${BB_VERSION}/babashka-${BB_VERSION}-${bbos}.${archive}"
+          if [ "$archive" = zip ]; then
+            curl -fsSL "$url" -o "$root/babashka.zip"
+            unzip -q "$root/babashka.zip" bb.exe -d "$root/bin"
+          else
+            curl -fsSL "$url" | tar -xz -C "$root/bin" bb
+          fi
+          fetch kotoba "$KOTOBA_REF"
+          fetch org-babashka-nbb "$ENGINE_REF"
+          (cd "$root/org-babashka-nbb" && npm install --ignore-scripts --no-save import-meta-resolve@4.2.0)
+          echo "$(cygpath -w "$root/bin" 2>/dev/null || printf '%s' "$root/bin")" >> "$GITHUB_PATH"
+          echo "$(cygpath -w "$root/kotoba/bin" 2>/dev/null || printf '%s' "$root/kotoba/bin")" >> "$GITHUB_PATH"
+          echo "KBB_ENGINE=$(cygpath -w "$root/org-babashka-nbb/cli.js" 2>/dev/null || printf '%s' "$root/org-babashka-nbb/cli.js")" >> "$GITHUB_ENV"
+      - name: Run canonical Amu program fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(kbb -Sdeps '{:paths ["src" "test"]}' -e '(require (quote kotoba.vm.kototama-program-test)) (cljs.test/run-tests (quote kotoba.vm.kototama-program-test))' 2>&1)" || {
+            printf '%s\n' "$result"
+            exit 1
+          }
+          printf '%s\n' "$result"
+          printf '%s\n' "$result" | grep -q '^0 failures, 0 errors\.$'
