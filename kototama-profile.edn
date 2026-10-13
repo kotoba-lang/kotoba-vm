@@ -5,7 +5,11 @@
  :implementation
  {:name :kotoba-vm
   :repository "https://github.com/kotoba-lang/kotoba-vm"
-  :kind :ipld-actor-kernel}
+  :kind :ipld-actor-kernel
+  :engine {:guest-format :kotoba.vm/guest-v1
+           :instruction-set :register-machine
+           :kototama-universal-program-format false
+           :wasm-required false}}
  :profiles
  {:core/v1
   {:status :partial

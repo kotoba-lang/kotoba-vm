@@ -1,11 +1,12 @@
 # kotoba-vm — a Kototama actor-kernel implementation
 
-**The IPLD actor invocation kernel for a Kotoba app-chain.** It is a partial
-implementation of the
-[`Kototama VM`](https://github.com/kotoba-lang/kototama/blob/main/docs/kototama-virtual-machine.md)
-core and has Filecoin's FVM shape (Machine / Call Manager / Kernel / syscalls /
-invocation-local handles / message-local overlay), not Filecoin compatibility
-by itself.
+**The IPLD actor invocation kernel for a Kotoba app-chain.**
+[`Kototama`](https://github.com/kotoba-lang/kototama/blob/main/docs/kototama-virtual-machine.md)
+owns the versioned VM contract, as the EVM specification does in its own
+ecosystem. This repository implements one partial `core/v1` actor-kernel
+profile with Filecoin's FVM shape (Machine / Call Manager / Kernel / syscalls /
+invocation-local handles / message-local overlay); it is neither the complete
+Kototama machine nor Filecoin compatibility by itself.
 
 This repo is the missing execution plane behind `inga.state`'s `:invoke-fn` seam. Consensus does not import it. It is injected, the same way `codebase.actor` is.
 
@@ -21,6 +22,11 @@ current boundary without overclaiming it: partial `core/v1`, FVM
 FEVM compatibility is earned by pinning the external protocol versions and
 passing the corresponding Kototama differential suites; architectural
 resemblance is not sufficient.
+
+The v1 register-machine guest format below is this engine's artifact format,
+not Kototama's universal program encoding. Wasm is not required to execute
+this profile, and this repository does not claim macOS or Windows qualification
+without host-specific conformance evidence.
 
 ## Shape (FIP-0030 analogue)
 

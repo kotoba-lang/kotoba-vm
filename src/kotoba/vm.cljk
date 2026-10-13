@@ -22,7 +22,9 @@
 
   ## What this is not
 
-  - kototama: Wasm host / runtime-link. Not an IPLD actor tree.
+  - kototama: owns the versioned VM contract. This repository implements a
+    partial core/v1 actor-kernel profile; it is not the complete Kototama
+    machine or its universal program encoding.
   - codebase.actor: a pure `(state, message) → next-state`. No syscalls.
   - io-filecoin: a Filecoin protocol client. No actor state, no HAMT, no FVM.
   - kotoba-lang/machine: hardware CPU/cache descriptors. Not this Machine.
