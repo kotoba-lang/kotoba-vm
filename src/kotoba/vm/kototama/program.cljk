@@ -8,6 +8,8 @@
 
 (def program-tag "kotoba.vm/register-guest")
 (def program-version 1)
+(def canonical-program-tag "kototama.vm/program")
+(def canonical-program-version 1)
 
 (def supported-instructions
   #{"self" "args" "method" "caller" "address"
@@ -41,6 +43,52 @@
                    :instruction instruction}))))
   methods)
 
+(def ^:private expressions
+  #{"const" "var" "let" "loop" "recur" "if" "do" "call"
+    "arith" "compare" "vector" "list" "map" "set" "get" "assoc" "dissoc"})
+
+(defn- validate-expression! [form]
+  (when-not (and (vector? form) (string? (first form))
+                 (contains? expressions (first form)))
+    (invalid! "Canonical Kototama expression is not implemented by core/i64-v1"
+              {:expression form}))
+  (let [[tag a b c] form]
+    (case tag
+      "const" (when-not (= 2 (count form)) (invalid! "Malformed const expression" {}))
+      "var" (when-not (and (= 2 (count form)) (string? a))
+              (invalid! "Malformed variable expression" {}))
+      ("let" "loop")
+      (do
+        (when-not (and (= 3 (count form)) (vector? a)
+                       (every? #(and (vector? %) (= 2 (count %)) (string? (first %))) a))
+          (invalid! "Malformed binding expression" {:tag tag}))
+        (doseq [[_ value] a] (validate-expression! value))
+        (validate-expression! b))
+      "if" (do (when-not (= 4 (count form)) (invalid! "Malformed if expression" {}))
+               (doseq [child [a b c]] (validate-expression! child)))
+      ("get" "dissoc")
+      (do (when-not (= 3 (count form)) (invalid! "Malformed collection expression" {:tag tag}))
+          (validate-expression! a) (validate-expression! b))
+      "assoc" (do (when-not (= 4 (count form)) (invalid! "Malformed assoc expression" {}))
+                  (doseq [child [a b c]] (validate-expression! child)))
+      ("call" "arith" "compare")
+      (do (when-not (and (= 3 (count form)) (string? a) (vector? b))
+            (invalid! "Malformed call or operation expression" {:tag tag}))
+          (when (and (= tag "arith") (not (contains? #{"add" "sub" "mul" "div" "quot" "mod"} a)))
+            (invalid! "Unknown arithmetic operation" {:op a}))
+          (when (and (= tag "compare") (not (contains? #{"=" "<" ">" "<=" ">="} a)))
+            (invalid! "Unknown comparison operation" {:op a}))
+          (doseq [child b] (validate-expression! child)))
+      (do
+        (when-not (and (= 2 (count form)) (vector? a))
+          (invalid! "Malformed expression vector" {:tag tag}))
+        (if (= tag "map")
+          (doseq [pair a]
+            (when-not (and (vector? pair) (= 2 (count pair)))
+              (invalid! "Malformed map expression pair" {}))
+            (doseq [child pair] (validate-expression! child)))
+          (doseq [child a] (validate-expression! child)))))))
+
 (defn decode
   "Return a kernel-compatible guest map for this engine's register profile.
 
@@ -54,3 +102,39 @@
     (invalid! "Block is not a Kototama program/v1 envelope" {}))
   {"kotoba.vm/guest" 1
    "methods" (validate-methods (nth node 2))})
+
+(defn decode-canonical
+  "Validate Amu's engine-neutral `kototama.vm/program` envelope without
+  translating it into this VM's distinct register-guest instruction set."
+  [node]
+  (when-not (and (vector? node) (= 3 (count node))
+                 (= canonical-program-tag (nth node 0))
+                 (= canonical-program-version (nth node 1)))
+    (invalid! "Block is not a canonical Kototama program/v1 envelope" {}))
+  (let [program (nth node 2)
+        methods (get program "methods")]
+    (when-not (and (map? program)
+                   (or (nil? (get program "entry"))
+                       (string? (get program "entry")))
+                   (= "kotoba.i64-wrap/v1" (get program "value-profile"))
+                   (map? methods))
+      (invalid! "Canonical Kototama program header is invalid" {}))
+    (doseq [[name method] methods]
+      (when-not (and (string? name) (map? method)
+                     (vector? (get method "params"))
+                     (every? string? (get method "params"))
+                     (vector? (get method "param-types"))
+                     (= (count (get method "params"))
+                        (count (get method "param-types")))
+                     (every? #{"i64"} (get method "param-types"))
+                     (= "i64" (get method "result"))
+                     (vector? (get method "effects"))
+                     (empty? (get method "effects"))
+                     (vector? (get method "body")))
+        (invalid! "Canonical Kototama i64 method is unsupported by this VM profile"
+                  {:method name}))
+      (validate-expression! (get method "body")))
+    {"kototama.vm/program" 1
+     "entry" (get program "entry")
+     "value-profile" (get program "value-profile")
+     "methods" methods}))

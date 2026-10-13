@@ -6,9 +6,9 @@
  {:name :kotoba-vm
   :repository "https://github.com/kotoba-lang/kotoba-vm"
   :kind :ipld-actor-kernel
-  :engine {:guest-format :kotoba.vm/guest-v1
-           :instruction-set :register-machine
-           :kototama-program-format false
+  :engine {:guest-format [:kotoba.vm/register-guest-v1 :kototama.vm/program-v1]
+           :instruction-set [:register-machine :closed-expression]
+           :kototama-program-format :partial
            :profile-guest-format :kotoba.vm/register-guest-v1
            :kototama-universal-program-format false
            :wasm-required false}}
@@ -16,14 +16,22 @@
  {:core/v1
   {:status :partial
    :implemented [:closed-register-guest-profile
+                 :canonical-kototama-program-envelope
+                 :closed-i64-expression-evaluation
+                 :i64-wrap-arithmetic
+                 :expression-fuel-accounting
                  :deterministic-transition
                  :fuel-as-value
                  :ipld-verified-read
                  :message-local-overlay
                  :nested-call-revert]
-   :evidence ["test/kotoba/vm_test.cljk"]
-   :omissions [:kototama-program-v1-format
-               :closed-kotoba-s-expression
+   :evidence ["test/kotoba/vm_test.cljk"
+              "test/kotoba/vm/kototama_program_test.cljk"]
+   :omissions [:complete-kototama-program-v1-format
+               :actor-state-expressions
+               :authorization-expressions
+               :effect-expressions
+               :complete-closed-kotoba-s-expression
                :complete-kototama-core-instruction-set
                :bounded-datalog-authority
                :biscuit-delegation

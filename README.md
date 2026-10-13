@@ -17,7 +17,8 @@ This repo is the missing execution plane behind `inga.state`'s `:invoke-fn` seam
 > of the same name.
 
 The machine-readable [`kototama-profile.edn`](kototama-profile.edn) states the
-current boundary without overclaiming it: partial `core/v1`, FVM
+current boundary without overclaiming it: partial `core/v1` (including a
+bounded pure i64 evaluator for Amu's canonical program envelope), FVM
 **shape-only**, and no current `evm/v1` or `fevm/v1` conformance. FVM, EVM or
 FEVM compatibility is earned by pinning the external protocol versions and
 passing the corresponding Kototama differential suites; architectural
@@ -31,7 +32,8 @@ without host-specific conformance evidence.
 ## Shape (FIP-0030 analogue)
 
 ```
-guest (v1 register machine, or a test-only host-fn)
+guest (canonical Kototama closed-expression i64 subset, this engine's v1
+register machine, or a test-only host-fn)
   ↕ kotoba.vm syscalls
 Kernel (handles, overlay)
   ↕

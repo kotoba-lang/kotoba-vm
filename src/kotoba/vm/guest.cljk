@@ -21,6 +21,7 @@
   stay literals. The machine charges `:guest/op` per instruction on top
   of whatever the syscall itself charges."
   (:require [ipld.core :as ipld]
+            [kotoba.vm.kototama.interpreter :as kototama-interpreter]
             [kotoba.vm.kototama.program :as kototama-program]
             [kotoba.vm.kernel :as k]
             [kotoba.vm.syscall :as sc]))
@@ -40,11 +41,17 @@
       (throw (ex-info "kotoba.vm: code block missing"
                       {:type :kotoba.vm/no-code :cid code-cid})))
     (let [node (ipld/decode bytes)
-          node (if (and (vector? node)
-                        (= kototama-program/program-tag (first node)))
+          canonical? (and (vector? node)
+                          (= kototama-program/canonical-program-tag (first node)))
+          node (cond
+                 canonical? (assoc (kototama-program/decode-canonical node)
+                                   ::canonical-program true)
+                 (and (vector? node)
+                      (= kototama-program/program-tag (first node)))
                  (kototama-program/decode node)
-                 node)]
-      (when-not (and (map? node) (= guest-version (get node "kotoba.vm/guest")))
+                 :else node)]
+      (when-not (or (and (map? node) (= guest-version (get node "kotoba.vm/guest")))
+                    (and (map? node) (::canonical-program node)))
         (throw (ex-info "kotoba.vm: not a v1 guest block"
                         {:type :kotoba.vm/not-callable :cid code-cid})))
       node)))
@@ -169,8 +176,10 @@
         (nil? code-cid) (assoc ctx :last-error :no-code)
         :else
         (let [node (load-code ctx code-cid)]
-          (if-let [host (get node "host")]
-            (run-host ctx host)
+          (cond
+            (::canonical-program node) (kototama-interpreter/invoke ctx node)
+            (get node "host") (run-host ctx (get node "host"))
+            :else
             (let [ops (get-in node ["methods" (:method ctx)])]
               (if (nil? ops)
                 (assoc ctx :aborted? true :last-error :not-callable)
