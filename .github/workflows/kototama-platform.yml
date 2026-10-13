@@ -21,7 +21,7 @@ jobs:
       - name: Install Babashka and KBB
         shell: bash
         env:
-          KOTOBA_REF: 022b33f81d28f216295744762c94db1df74193e2
+          KOTOBA_REF: 4115c0e58805578c1c33f84a1fdc033f70036cdd
           ENGINE_REF: 1675e6aab65d5a99e37840cc5012bc2eca6f4a07
           BB_VERSION: 1.12.218
         run: |
