@@ -281,6 +281,10 @@
                    :depth (inc (long (:depth ctx 0)))
                    :max-depth (:max-depth ctx max-call-depth)
                    :host-guests (:host-guests ctx)
+                   :authority-facts-fn (:authority-facts-fn ctx)
+                   :datalog-budget (:datalog-budget ctx)
+                   :authority-proof (:authority-proof ctx)
+                   :authority-decisions (:authority-decisions ctx)
                    :self-state (:state callee)
                    :return nil
                    :invoke-actor (:invoke-actor ctx)
@@ -298,6 +302,7 @@
                      :spent (:spent child)
                      :crossings (:crossings child)
                      :copied-bytes (:copied-bytes child)
+                     :authority-decisions (:authority-decisions child)
                      :exhausted? (boolean (:exhausted? child))
                      :aborted? false
                      :result nil
@@ -312,6 +317,7 @@
                        :spent (:spent child)
                        :crossings (:crossings child)
                        :copied-bytes (:copied-bytes child)
+                       :authority-decisions (:authority-decisions child)
                        :exhausted? false
                        :last-error nil
                        :call-error nil
