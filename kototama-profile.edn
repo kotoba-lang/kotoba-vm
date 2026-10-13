@@ -8,18 +8,22 @@
   :kind :ipld-actor-kernel
   :engine {:guest-format :kotoba.vm/guest-v1
            :instruction-set :register-machine
+           :kototama-program-format :kototama.vm/program-v1
            :kototama-universal-program-format false
            :wasm-required false}}
  :profiles
  {:core/v1
   {:status :partial
-   :implemented [:deterministic-transition
+   :implemented [:kototama-program-v1-envelope
+                 :closed-register-instruction-subset
+                 :deterministic-transition
                  :fuel-as-value
                  :ipld-verified-read
                  :message-local-overlay
                  :nested-call-revert]
    :evidence ["test/kotoba/vm_test.cljk"]
    :omissions [:closed-kotoba-s-expression
+               :complete-kototama-core-instruction-set
                :bounded-datalog-authority
                :biscuit-delegation
                :kototama-receipt-v1]}

@@ -1,0 +1,56 @@
+(ns kotoba.vm.kototama.program
+  "Wire-format boundary for Kototama core/v1 programs.
+
+  This decoder accepts the portable DAG-CBOR array envelope and lowers its
+  method table into the existing kernel's data-only instruction interface.
+  It intentionally rejects instructions the current partial core profile
+  cannot execute; it never evaluates source or loads a host function.")
+
+(def program-tag "kototama.vm/program")
+(def program-version 1)
+
+(def supported-instructions
+  #{"self" "args" "method" "caller" "address"
+    "const" "empty" "open" "node" "get" "put" "inc" "add"
+    "nth" "write-node" "set-state" "call" "return" "halt"})
+
+(def instruction-arity
+  {"self" 2 "args" 2 "method" 2 "caller" 2 "address" 2
+   "const" 3 "empty" 2 "open" 3 "node" 3 "get" 4 "put" 5
+   "inc" 3 "add" 4 "nth" 4 "write-node" 3 "set-state" 2
+   "call" 5 "return" 2 "halt" 1})
+
+(defn- invalid! [message data]
+  (throw (ex-info message (merge {:type :kototama.vm/invalid-program} data))))
+
+(defn- validate-methods [methods]
+  (when-not (map? methods)
+    (invalid! "Kototama program method table must be a map" {}))
+  (doseq [[method instructions] methods]
+    (when-not (and (string? method) (vector? instructions))
+      (invalid! "Kototama methods must map text names to instruction vectors"
+                {:method method}))
+    (doseq [[index instruction] (map-indexed vector instructions)]
+      (when-not (and (vector? instruction)
+                     (string? (first instruction))
+                     (contains? supported-instructions (first instruction))
+                     (= (instruction-arity (first instruction))
+                        (count instruction)))
+        (invalid! "Kototama instruction is not implemented by this VM profile"
+                  {:method method :instruction-index index
+                   :instruction instruction}))))
+  methods)
+
+(defn decode
+  "Return a kernel-compatible guest map for the canonical program envelope.
+
+  Wire form: [\"kototama.vm/program\" 1 {method [instruction ...]}].
+  The vector and all nested values are encoded as canonical DAG-CBOR."
+  [node]
+  (when-not (and (vector? node)
+                 (= 3 (count node))
+                 (= program-tag (nth node 0))
+                 (= program-version (nth node 1)))
+    (invalid! "Block is not a Kototama program/v1 envelope" {}))
+  {"kotoba.vm/guest" 1
+   "methods" (validate-methods (nth node 2))})
