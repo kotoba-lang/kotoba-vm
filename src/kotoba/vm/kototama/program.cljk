@@ -1,12 +1,12 @@
 (ns kotoba.vm.kototama.program
-  "Wire-format boundary for Kototama core/v1 programs.
+  "Wire-format boundary for this engine's register-machine guest profile.
 
-  This decoder accepts the portable DAG-CBOR array envelope and lowers its
-  method table into the existing kernel's data-only instruction interface.
+  This decoder accepts a profile-specific DAG-CBOR array envelope and lowers
+  its method table into the existing kernel's data-only instruction interface.
   It intentionally rejects instructions the current partial core profile
   cannot execute; it never evaluates source or loads a host function.")
 
-(def program-tag "kototama.vm/program")
+(def program-tag "kotoba.vm/register-guest")
 (def program-version 1)
 
 (def supported-instructions
@@ -42,9 +42,9 @@
   methods)
 
 (defn decode
-  "Return a kernel-compatible guest map for the canonical program envelope.
+  "Return a kernel-compatible guest map for this engine's register profile.
 
-  Wire form: [\"kototama.vm/program\" 1 {method [instruction ...]}].
+  Wire form: [\"kotoba.vm/register-guest\" 1 {method [instruction ...]}].
   The vector and all nested values are encoded as canonical DAG-CBOR."
   [node]
   (when-not (and (vector? node)

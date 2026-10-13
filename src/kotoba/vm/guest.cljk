@@ -1,7 +1,7 @@
 (ns kotoba.vm.guest
   "v1 guest: a register machine over kernel syscalls, or a named host-fn.
 
-  The IPLD code block may be the canonical Kototama program/v1 envelope,
+  The IPLD code block may use this engine's register-guest profile,
   or the legacy local guest map:
 
     {\"kotoba.vm/guest\" 1
@@ -12,8 +12,8 @@
     {\"kotoba.vm/guest\" 1
      \"host\" \"counter\"}
 
-  The Kototama envelope currently lowers only the closed register-kernel
-  subset. `host` looks up `:host-guests` on the Machine — a test seam, not a
+  The register-guest profile is engine-specific; it is not the canonical
+  Kototama program format. `host` looks up `:host-guests` on the Machine — a test seam, not a
   production loader. Production code is the methods table. Neither form
   can see the block store except by issuing a syscall.
 
