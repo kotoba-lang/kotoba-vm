@@ -53,7 +53,10 @@ jobs:
           fi
           fetch kotoba "$KOTOBA_REF"
           fetch org-babashka-nbb "$ENGINE_REF"
-          (cd "$root/org-babashka-nbb" && npm install --ignore-scripts --no-save import-meta-resolve@4.2.0)
+          # The fixture loads the pinned io-ipld dependency graph, whose Node
+          # digest adapter imports @noble/hashes. Keep both runtime packages
+          # explicit and pinned for the cross-platform engine checkout.
+          (cd "$root/org-babashka-nbb" && npm install --ignore-scripts --no-save import-meta-resolve@4.2.0 @noble/hashes@2.4.0)
           echo "$(cygpath -w "$root/bin" 2>/dev/null || printf '%s' "$root/bin")" >> "$GITHUB_PATH"
           echo "$(cygpath -w "$root/kotoba/bin" 2>/dev/null || printf '%s' "$root/kotoba/bin")" >> "$GITHUB_PATH"
           echo "KBB_ENGINE=$(cygpath -w "$root/org-babashka-nbb/cli.js" 2>/dev/null || printf '%s' "$root/org-babashka-nbb/cli.js")" >> "$GITHUB_ENV"
