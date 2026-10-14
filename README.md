@@ -1,11 +1,12 @@
 # kotoba-vm — a Kototama actor-kernel implementation
 
-**The IPLD actor invocation kernel for a Kotoba app-chain.** It is a partial
-implementation of the
-[`Kototama VM`](https://github.com/kotoba-lang/kototama/blob/main/docs/kototama-virtual-machine.md)
-core and has Filecoin's FVM shape (Machine / Call Manager / Kernel / syscalls /
-invocation-local handles / message-local overlay), not Filecoin compatibility
-by itself.
+**The IPLD actor invocation kernel for a Kotoba app-chain.**
+[`Kototama`](https://github.com/kotoba-lang/kototama/blob/main/docs/kototama-virtual-machine.md)
+owns the versioned VM contract, as the EVM specification does in its own
+ecosystem. This repository implements one partial `core/v1` actor-kernel
+profile with Filecoin's FVM shape (Machine / Call Manager / Kernel / syscalls /
+invocation-local handles / message-local overlay); it is neither the complete
+Kototama machine nor Filecoin compatibility by itself.
 
 This repo is the missing execution plane behind `inga.state`'s `:invoke-fn` seam. Consensus does not import it. It is injected, the same way `codebase.actor` is.
 
@@ -16,16 +17,48 @@ This repo is the missing execution plane behind `inga.state`'s `:invoke-fn` seam
 > of the same name.
 
 The machine-readable [`kototama-profile.edn`](kototama-profile.edn) states the
-current boundary without overclaiming it: partial `core/v1`, FVM
+current boundary without overclaiming it: partial `core/v1` (including a
+pure data-i64 evaluator for Amu's canonical program envelope, with bounded
+i64 arithmetic and nil/boolean/text/vector/map values), FVM
 **shape-only**, and no current `evm/v1` or `fevm/v1` conformance. FVM, EVM or
 FEVM compatibility is earned by pinning the external protocol versions and
 passing the corresponding Kototama differential suites; architectural
 resemblance is not sufficient.
 
+The core profile now includes a bounded positive Datalog evaluator and the
+closed five-origin eligibility join. Effect-bearing methods are gated before
+their bodies run, including internal method calls, and the local message result
+records each allowed method/effect/resource tuple. Facts receive provenance
+from separate AMU/VM/Grant/policy/runtime input slots. A machine-level
+`:authority-facts-fn` supplies those facts and must authenticate each source
+and return deterministic, read-only results across replicas. Its request binds
+the actor, caller, program CID, current actor-state CID, method, effect,
+arguments, authority proof and call depth. Source authentication adapters,
+Biscuit delegation verification and the complete
+Kototama authority/receipt contract remain omissions, so this does not claim
+complete `core/v1` conformance.
+
+Amu's canonical `"effect" / "invoke-capability"` node now reaches a separate
+machine `:effect-fn` port only when its exact capability is declared by the
+current method and that method passed the five-origin gate. The port receives
+the actor, authenticated caller field, code and state CIDs, method, effect,
+arguments, proof and call depth. Hosts must authenticate the caller, reserve
+any scoped use before external work, bound the provider, and return a portable
+value; this VM does not supply those host guarantees or an effect receipt.
+Missing ports and mismatched declarations fail closed. A real Amu-generated
+capability artifact exercises this boundary in
+`test/kotoba/vm/kototama_program_test.cljk`.
+
+The v1 register-machine guest format below is this engine's artifact format,
+not Kototama's universal program encoding. Wasm is not required to execute
+this profile, and this repository does not claim macOS or Windows qualification
+without host-specific conformance evidence.
+
 ## Shape (FIP-0030 analogue)
 
 ```
-guest (v1 register machine, or a test-only host-fn)
+guest (canonical Kototama closed-expression i64 subset, this engine's v1
+register machine, or a test-only host-fn)
   ↕ kotoba.vm syscalls
 Kernel (handles, overlay)
   ↕

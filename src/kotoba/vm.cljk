@@ -22,7 +22,9 @@
 
   ## What this is not
 
-  - kototama: Wasm host / runtime-link. Not an IPLD actor tree.
+  - kototama: owns the versioned VM contract. This repository implements a
+    partial core/v1 actor-kernel profile; it is not the complete Kototama
+    machine or its universal program encoding.
   - codebase.actor: a pure `(state, message) → next-state`. No syscalls.
   - io-filecoin: a Filecoin protocol client. No actor state, no HAMT, no FVM.
   - kotoba-lang/machine: hardware CPU/cache descriptors. Not this Machine.
@@ -48,13 +50,14 @@
     (= :no-code (:last-error ctx)) :no-code
     (= :not-callable (:last-error ctx)) :not-callable
     (= :invalid-result (:last-error ctx)) :invalid-result
+    (= :unauthorized (:last-error ctx)) :unauthorized
     (:aborted? ctx) :aborted
     (:last-error ctx) :aborted
     :else :ok))
 
 (defn- ctx-for
-  [{:keys [get-fn put! host-guests max-depth]}
-   {:keys [actors from to method args fuel]}]
+  [{:keys [get-fn put! host-guests max-depth authority-facts-fn datalog-budget effect-fn]}
+   {:keys [actors from to method args fuel authority-proof]}]
   {:get-fn get-fn
    :put! put!
    :overlay {}
@@ -74,6 +77,11 @@
    :depth 0
    :max-depth (or max-depth k/max-call-depth)
    :host-guests (or host-guests {})
+   :authority-facts-fn authority-facts-fn
+   :effect-fn effect-fn
+   :datalog-budget datalog-budget
+   :authority-proof authority-proof
+   :authority-decisions []
    :self-state (get-in actors [to :state])
    :return nil
    :invoke-actor guest/invoke
@@ -84,7 +92,16 @@
   "Apply one message to an in-memory actor map against a block store.
 
     {:actors {addr {:code :state :nonce :balance}}
-     :from :to :method :args :fuel}
+     :from :to :method :args :fuel :authority-proof}
+
+  Effect-bearing Kototama methods require a machine-level
+  `:authority-facts-fn`. It receives the actor, program CID, method, declared
+  effect, current actor-state CID, caller, arguments, opaque authority proof
+  and call depth, then returns
+  `{:resource value :origin-facts {owner [fact-tuples]}}`. This callback is
+  part of the trusted host boundary: it must authenticate each owner's facts
+  and be deterministic across replicas. Missing, invalid or incomplete facts
+  refuse execution before the method body runs.
 
   Returns
 
@@ -126,7 +143,8 @@
                  :return (when ok? (:return ctx))
                  :fuel-used (:spent ctx)
                  :crossings (:crossings ctx)
-                 :copied-bytes (:copied-bytes ctx)}})))
+                 :copied-bytes (:copied-bytes ctx)
+                 :authority-decisions (:authority-decisions ctx)}})))
 
 (defn invoke-fn
   "An `inga.state`-shaped `:invoke-fn`.

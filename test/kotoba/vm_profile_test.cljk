@@ -34,6 +34,27 @@
            :consensus}
          (set (:non-claims profile)))))
 
+(deftest bounded-datalog-partial-implementation-has-direct-evidence
+  (let [core (get-in profile [:profiles :core/v1])]
+    (is (= :partial (:status core)))
+    (is (every? (set (:implemented core))
+                [:bounded-positive-function-free-datalog
+                 :range-restricted-rules
+                 :source-slot-derived-fact-provenance
+                 :five-origin-eligibility-join
+                 :datalog-round-fact-and-join-budgets
+                 :invoke-time-five-origin-authorization-gate
+                 :authority-decisions-in-local-message-result]))
+    (is (some #(= "test/kotoba/vm/kototama_datalog_test.cljk" %) (:evidence core)))
+    (is (seq (:omissions core)))
+    (is (some #{:source-authenticated-authority-fact-adapters}
+              (:omissions core)))))
+
+(deftest bounded-datalog-evidence-file-contains-tests
+  (let [path "test/kotoba/vm/kototama_datalog_test.cljk"]
+    (is (io/exists? (io/file path)))
+    (is (re-find #"deftest" (slurp path)))))
+
 (deftest every-incomplete-profile-names-its-omissions
   (doseq [[profile-name declaration] (:profiles profile)]
     (testing (name profile-name)

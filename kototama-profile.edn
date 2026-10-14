@@ -5,18 +5,48 @@
  :implementation
  {:name :kotoba-vm
   :repository "https://github.com/kotoba-lang/kotoba-vm"
-  :kind :ipld-actor-kernel}
+  :kind :ipld-actor-kernel
+  :engine {:guest-format [:kotoba.vm/register-guest-v1 :kototama.vm/program-v1]
+           :instruction-set [:register-machine :closed-expression]
+           :kototama-program-format :partial
+           :profile-guest-format :kotoba.vm/register-guest-v1
+           :kototama-universal-program-format false
+           :wasm-required false}}
  :profiles
  {:core/v1
   {:status :partial
-   :implemented [:deterministic-transition
+   :implemented [:closed-register-guest-profile
+                 :canonical-kototama-program-envelope
+                 :closed-i64-expression-evaluation
+                 :portable-nil-boolean-text-vector-map-values
+                 :lisp-truth-semantics-for-data-profile
+                 :structural-data-equality
+                 :i64-wrap-arithmetic
+                 :expression-fuel-accounting
+                 :bounded-positive-function-free-datalog
+                 :range-restricted-rules
+                 :source-slot-derived-fact-provenance
+                 :five-origin-eligibility-join
+                 :datalog-round-fact-and-join-budgets
+                 :invoke-time-five-origin-authorization-gate
+                 :authority-decisions-in-local-message-result
+                 :declared-capability-invoke-expression
+                 :host-effect-port-after-authorization
+                 :deterministic-transition
                  :fuel-as-value
                  :ipld-verified-read
                  :message-local-overlay
                  :nested-call-revert]
-   :evidence ["test/kotoba/vm_test.cljk"]
-   :omissions [:closed-kotoba-s-expression
-               :bounded-datalog-authority
+   :evidence ["test/kotoba/vm_test.cljk"
+              "test/kotoba/vm/kototama_program_test.cljk"
+              "test/kotoba/vm/kototama_datalog_test.cljk"]
+   :omissions [:complete-kototama-program-v1-format
+               :actor-state-expressions
+               :authorization-expressions
+               :general-effect-expression-set
+               :complete-closed-kotoba-s-expression
+               :complete-kototama-core-instruction-set
+               :source-authenticated-authority-fact-adapters
                :biscuit-delegation
                :kototama-receipt-v1]}
 
