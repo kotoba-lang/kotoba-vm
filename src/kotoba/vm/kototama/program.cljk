@@ -129,7 +129,9 @@
                               (get program "value-profile"))
                    (map? methods))
       (invalid! "Canonical Kototama program header is invalid" {}))
-    (let [exports (or (get program "exports") (vec (keys methods)))]
+    (let [exports (if (contains? program "exports")
+                    (get program "exports")
+                    (vec (keys methods)))]
       (when-not (and (vector? exports)
                      (every? string? exports)
                      (= (count exports) (count (set exports)))
