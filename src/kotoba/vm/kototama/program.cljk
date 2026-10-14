@@ -129,7 +129,16 @@
                               (get program "value-profile"))
                    (map? methods))
       (invalid! "Canonical Kototama program header is invalid" {}))
-    (doseq [[name method] methods]
+    (let [exports (or (get program "exports") (vec (keys methods)))]
+      (when-not (and (vector? exports)
+                     (every? string? exports)
+                     (= (count exports) (count (set exports)))
+                     (every? #(contains? methods %) exports)
+                     (or (nil? (get program "entry"))
+                         (some #{(get program "entry")} exports)))
+        (invalid! "Canonical Kototama export list is invalid"
+                  {:exports exports :entry (get program "entry")}))
+      (doseq [[name method] methods]
       (when-not (and (string? name) (map? method)
                      (vector? (get method "params"))
                      (every? string? (get method "params"))
@@ -145,10 +154,11 @@
                      (vector? (get method "effects"))
                      (every? vector? (get method "effects"))
                      (vector? (get method "body")))
-        (invalid! "Canonical Kototama method is unsupported by this VM profile"
-                  {:method name}))
-      (validate-expression! (get method "body")))
-    {"kototama.vm/program" 1
-     "entry" (get program "entry")
-     "value-profile" (get program "value-profile")
-     "methods" methods}))
+          (invalid! "Canonical Kototama method is unsupported by this VM profile"
+                    {:method name}))
+        (validate-expression! (get method "body")))
+      {"kototama.vm/program" 1
+       "entry" (get program "entry")
+       "exports" exports
+       "value-profile" (get program "value-profile")
+       "methods" methods})))
