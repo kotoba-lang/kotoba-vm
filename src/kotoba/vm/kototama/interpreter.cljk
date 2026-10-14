@@ -356,8 +356,11 @@
   (try
     (let [ctx (assoc ctx ::value-profile (get program "value-profile"))
           methods (get program "methods")
+          exports (set (or (get program "exports") (keys methods)))
           method (or (:method ctx) (get program "entry"))]
       (when-not (string? method) (invalid! :missing-entry-method {}))
+      (when-not (contains? exports method)
+        (invalid! :method-not-exported {:method method}))
       (let [[ctx result] (invoke-method ctx method (:args ctx) methods 0)]
         (if (halted? ctx) ctx (assoc ctx :return result))))
     (catch :default error

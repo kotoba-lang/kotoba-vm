@@ -33,6 +33,7 @@
 (defn- data-program [body]
   ["kototama.vm/program" 1
    {"entry" "echo"
+    "exports" ["echo"]
     "value-profile" "kototama.data-i64/v1"
     "methods" {"echo" {"params" ["value"] "param-types" ["value"]
                         "result" "value" "effects" [] "body" body}}}])
@@ -40,6 +41,7 @@
 (defn- effect-program []
   ["kototama.vm/program" 1
    {"entry" "write"
+    "exports" ["write"]
     "value-profile" "kototama.data-i64/v1"
     "methods" {"write" {"params" [] "param-types" []
                           "result" "value" "effects" []
@@ -131,6 +133,25 @@
         result (run store machine code "echo" [expected] 100)]
     (is (:ok? result))
     (is (true? (get-in result [:receipt :return])))))
+
+(deftest private-methods-remain-callable-internally-but-not-from-actor-messages
+  (let [store (vm/memory-store)
+        machine {:get-fn (:get-fn store) :put! (:put! store)}
+        program ["kototama.vm/program" 1
+                 {"entry" "main" "exports" ["main"]
+                  "value-profile" "kototama.data-i64/v1"
+                  "methods" {"main" {"params" [] "param-types" []
+                                      "result" "value" "effects" []
+                                      "body" ["call" "private" []]}
+                             "private" {"params" [] "param-types" []
+                                        "result" "value" "effects" []
+                                        "body" ["const" "done"]}}}]
+        code (vm/put-code! (:put! machine) program)
+        private-call (run store machine code "private" [] 100)
+        entry-call (run store machine code "main" [] 100)]
+    (is (not (:ok? private-call)))
+    (is (:ok? entry-call))
+    (is (= "done" (get-in entry-call [:receipt :return])))))
 
 (deftest effect-bearing-entry-is-gated-by-the-five-origin-join
   (let [store (vm/memory-store)
